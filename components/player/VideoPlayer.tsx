@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { CaretLeft, Pause, Play } from "@phosphor-icons/react";
+import { CaretLeft, CaretRight, FastForward, Pause, Play } from "@phosphor-icons/react";
 import Hls from "hls.js";
 import type { TMDBEpisode, TMDBSeason } from "@/lib/tmdb";
 import Controls from "./Controls";
@@ -96,6 +96,9 @@ export default function VideoPlayer({
   const [subtitleDelay, setSubtitleDelay] = useState(0);
   const [subtitleFontSize] = useState(100);
   const [centerIndicator, setCenterIndicator] = useState<"play" | "pause" | null>(null);
+  const [videoEnded, setVideoEnded] = useState(false);
+  const [autoNextCountdown, setAutoNextCountdown] = useState<number | null>(null);
+  const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const spaceHeldRef = useRef(false);
   const spaceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -106,6 +109,17 @@ export default function VideoPlayer({
     () => JSON.stringify([stream.type, stream.playlist, stream.qualities, stream.captions]),
     [stream]
   );
+
+  // Next episode within the current season (null if last episode or no show)
+  const nextEpisode = useMemo(() => {
+    if (!showNavigation) return null;
+    const { episodes, currentEpisode, currentSeason } = showNavigation;
+    const idx = episodes.findIndex((e) => e.episode_number === currentEpisode);
+    if (idx !== -1 && idx < episodes.length - 1) {
+      return { episode: episodes[idx + 1], seasonNumber: currentSeason, episodes };
+    }
+    return null;
+  }, [showNavigation]);
   const customCaptions = useMemo(
     () => (customCaptionState.streamKey === streamKey ? customCaptionState.tracks : []),
     [customCaptionState, streamKey]
@@ -203,6 +217,7 @@ export default function VideoPlayer({
           if (initialPosition && initialPosition > 5) {
             video.currentTime = initialPosition;
           }
+          video.play().catch(() => {});
         });
         hls.on(Hls.Events.MANIFEST_PARSED, (_event, data) => {
           const levelsSet = new Set<string>();
@@ -237,6 +252,7 @@ export default function VideoPlayer({
           if (initialPosition && initialPosition > 5) {
             video.currentTime = initialPosition;
           }
+          video.play().catch(() => {});
         },
         { once: true }
       );
@@ -267,6 +283,7 @@ export default function VideoPlayer({
           if (initialPosition && initialPosition > 5) {
             video.currentTime = initialPosition;
           }
+          video.play().catch(() => {});
         },
         { once: true }
       );
@@ -279,6 +296,16 @@ export default function VideoPlayer({
       }
     };
   }, [stream, onError]);
+
+  // Reset ended/countdown state whenever a new stream is loaded
+  useEffect(() => {
+    setVideoEnded(false);
+    setAutoNextCountdown(null);
+    if (countdownIntervalRef.current) {
+      clearInterval(countdownIntervalRef.current);
+      countdownIntervalRef.current = null;
+    }
+  }, [streamKey]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -306,6 +333,7 @@ export default function VideoPlayer({
     const onEnded = () => {
       setPlaying(false);
       setShowControls(true);
+      setVideoEnded(true);
     };
 
     video.addEventListener("play", onPlay);
@@ -345,6 +373,51 @@ export default function VideoPlayer({
         clearTimeout(centerIndicatorTimerRef.current);
       }
     };
+  }, []);
+
+  // Auto-next episode countdown when video ends
+  useEffect(() => {
+    if (!videoEnded || !nextEpisode) return;
+
+    let count = 5;
+    setAutoNextCountdown(count);
+
+    const intervalId = setInterval(() => {
+      count -= 1;
+      if (count <= 0) {
+        clearInterval(intervalId);
+        countdownIntervalRef.current = null;
+        setAutoNextCountdown(null);
+        setVideoEnded(false);
+        onEpisodeSelect?.(nextEpisode);
+      } else {
+        setAutoNextCountdown(count);
+      }
+    }, 1000);
+
+    countdownIntervalRef.current = intervalId;
+    return () => clearInterval(intervalId);
+  }, [videoEnded]); // eslint-disable-line
+
+  const cancelAutoNext = useCallback(() => {
+    if (countdownIntervalRef.current) {
+      clearInterval(countdownIntervalRef.current);
+      countdownIntervalRef.current = null;
+    }
+    setAutoNextCountdown(null);
+    setVideoEnded(false);
+  }, []);
+
+  const handleNextEpisode = useCallback(() => {
+    if (!nextEpisode) return;
+    cancelAutoNext();
+    onEpisodeSelect?.(nextEpisode);
+  }, [nextEpisode, cancelAutoNext, onEpisodeSelect]);
+
+  const handleSkipIntro = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.currentTime = Math.min(video.duration, video.currentTime + 85);
   }, []);
 
   useEffect(() => {
@@ -747,6 +820,59 @@ export default function VideoPlayer({
           fontSize={subtitleFontSize}
           controlsVisible={showControls}
         />
+      )}
+
+      {/* Skip Intro — TV shows only, appears from 5s until 5 min mark */}
+      {!!showNavigation && !videoEnded && duration > 120 &&
+        currentTime >= 5 && currentTime <= Math.min(300, duration * 0.25) && (
+        <div className="absolute bottom-24 right-4 z-30 md:right-7">
+          <button
+            onClick={handleSkipIntro}
+            className="flex items-center gap-2 rounded border border-white/50 bg-black/60 px-4 py-2 text-sm font-semibold text-white backdrop-blur-sm transition hover:bg-white hover:text-black"
+          >
+            Skip Intro
+            <FastForward size={14} weight="fill" />
+          </button>
+        </div>
+      )}
+
+      {/* Skip Credits / Next Episode — last 3 min when next ep exists */}
+      {nextEpisode && !videoEnded && duration > 300 &&
+        duration - currentTime < 180 && duration - currentTime > 3 && (
+        <div className="absolute bottom-24 right-4 z-30 md:right-7">
+          <button
+            onClick={handleNextEpisode}
+            className="flex items-center gap-2 rounded border border-white/50 bg-black/60 px-4 py-2 text-sm font-semibold text-white backdrop-blur-sm transition hover:bg-white hover:text-black"
+          >
+            Next Episode
+            <CaretRight size={14} weight="bold" />
+          </button>
+        </div>
+      )}
+
+      {/* Auto-next countdown overlay */}
+      {autoNextCountdown !== null && nextEpisode && (
+        <div className="absolute bottom-24 right-4 z-30 flex flex-col items-end gap-2 md:right-7">
+          <p className="text-sm text-white/70">
+            Next episode in{" "}
+            <span className="font-bold text-white">{autoNextCountdown}s</span>
+          </p>
+          <div className="flex gap-2">
+            <button
+              onClick={cancelAutoNext}
+              className="rounded border border-white/40 bg-black/70 px-3 py-1.5 text-xs font-medium text-white/80 backdrop-blur-sm transition hover:bg-white/10"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleNextEpisode}
+              className="flex items-center gap-1.5 rounded border border-white/50 bg-black/70 px-4 py-1.5 text-sm font-semibold text-white backdrop-blur-sm transition hover:bg-white hover:text-black"
+            >
+              Play Now
+              <CaretRight size={14} weight="bold" />
+            </button>
+          </div>
+        </div>
       )}
 
       {centerIndicator && (
