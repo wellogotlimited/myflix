@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import BrowseGrid from "@/components/BrowseGrid";
 import { attachCardContext, getPopularMovies, getTopRatedMovies } from "@/lib/tmdb";
 import { requireProfile } from "@/lib/session";

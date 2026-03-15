@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import BrowseGrid from "@/components/BrowseGrid";
 import {
   attachCardContext,

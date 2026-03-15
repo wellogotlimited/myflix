@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import { attachCardContext, searchMulti } from "@/lib/tmdb";
 import { requireProfile } from "@/lib/session";
 import { passesMaturityFilter } from "@/lib/maturity";

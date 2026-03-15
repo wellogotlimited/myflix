@@ -1,12 +1,26 @@
 import { NextResponse } from "next/server";
 import { connectToDatabase, GenreAffinityModel, WatchHistoryModel } from "@/lib/db";
 import { requireProfile } from "@/lib/session";
+import type { MaturityLevel } from "@/lib/maturity";
 
 const TMDB_BASE = "https://api.themoviedb.org/3";
 
+// TMDB certification ceiling per maturity level, for movies and TV separately.
+const MOVIE_CERT: Record<MaturityLevel, string | null> = {
+  KIDS: "G",
+  TEEN: "PG-13",
+  ADULT: null,
+};
+const TV_CERT: Record<MaturityLevel, string | null> = {
+  KIDS: "TV-G",
+  TEEN: "TV-14",
+  ADULT: null,
+};
+
 async function tmdbDiscover(
   type: "movie" | "tv",
-  genreId: number
+  genreId: number,
+  maturityLevel: MaturityLevel
 ): Promise<Array<{ id: number; title?: string; name?: string; poster_path: string | null; backdrop_path: string | null; vote_average: number; genre_ids?: number[]; release_date?: string; first_air_date?: string; overview: string }>> {
   const apiKey = process.env.TMDB_API_KEY;
   if (!apiKey) return [];
@@ -16,6 +30,13 @@ async function tmdbDiscover(
   url.searchParams.set("with_genres", String(genreId));
   url.searchParams.set("sort_by", "popularity.desc");
   url.searchParams.set("vote_count.gte", "50");
+
+  // Apply TMDB-side certification filter so we never return unsuitable content
+  const certCeiling = type === "movie" ? MOVIE_CERT[maturityLevel] : TV_CERT[maturityLevel];
+  if (certCeiling) {
+    url.searchParams.set("certification_country", "US");
+    url.searchParams.set("certification.lte", certCeiling);
+  }
 
   const res = await fetch(url.toString(), { next: { revalidate: 3600 } });
   if (!res.ok) return [];
@@ -58,8 +79,8 @@ export async function GET() {
   const rows = await Promise.all(
     topGenres.map(async ({ genreId }) => {
       const [movies, shows] = await Promise.all([
-        tmdbDiscover("movie", genreId),
-        tmdbDiscover("tv", genreId),
+        tmdbDiscover("movie", genreId, profile.maturityLevel),
+        tmdbDiscover("tv", genreId, profile.maturityLevel),
       ]);
 
       const combined = [...movies, ...shows]
