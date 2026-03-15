@@ -37,6 +37,7 @@ interface MediaInfo {
 
 interface ShowNavigation {
   showId: string;
+  imdbId?: string | null;
   type: string;
   seasons: TMDBSeason[];
   episodes: TMDBEpisode[];

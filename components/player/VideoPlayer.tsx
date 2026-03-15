@@ -36,6 +36,7 @@ interface VideoPlayerProps {
   title?: string;
   showNavigation?: {
     showId: string;
+    imdbId?: string | null;
     type: string;
     seasons: TMDBSeason[];
     episodes: TMDBEpisode[];
@@ -122,11 +123,12 @@ export default function VideoPlayer({
     return null;
   }, [showNavigation]);
 
-  // Fetch real intro/recap/credits/preview timestamps from TheIntroDB
+  // Fetch real intro/recap/credits/preview timestamps via server-side proxy
   const segments = useSkipSegments(
     showNavigation?.showId ?? null,
     showNavigation?.currentSeason ?? null,
-    showNavigation?.currentEpisode ?? null
+    showNavigation?.currentEpisode ?? null,
+    showNavigation?.imdbId,
   );
 
   // Which segment is the player currently inside (if any)

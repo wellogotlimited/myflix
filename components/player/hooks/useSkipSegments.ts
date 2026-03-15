@@ -14,6 +14,7 @@ export interface Segment {
 interface RawSegment {
   start_ms: number | null;
   end_ms: number | null;
+  submission_count?: number;
 }
 
 const SEGMENT_TYPES: SegmentType[] = ["intro", "recap", "credits", "preview"];
@@ -24,6 +25,8 @@ function parseSegments(data: Record<string, RawSegment[]>): Segment[] {
     const list = data[type];
     if (!Array.isArray(list)) continue;
     for (const seg of list) {
+      // Skip unverified segments (same filter p-stream uses)
+      if ((seg.submission_count ?? 0) < 1) continue;
       result.push({
         type,
         startSec: (seg.start_ms ?? 0) / 1000,
@@ -35,13 +38,15 @@ function parseSegments(data: Record<string, RawSegment[]>): Segment[] {
 }
 
 /**
- * Fetches intro/recap/credits/preview segment timestamps from TheIntroDB.
- * Segments are only available for TV episodes; pass null values for movies.
+ * Fetches intro/recap/credits/preview segment timestamps via our server-side
+ * proxy (/api/segments) which calls TheIntroDB then falls back to introdb.app.
+ * Proxying avoids browser CORS restrictions on the external APIs.
  */
 export function useSkipSegments(
   tmdbId: string | null,
   season: number | null,
-  episode: number | null
+  episode: number | null,
+  imdbId?: string | null,
 ): Segment[] {
   const [segments, setSegments] = useState<Segment[]>([]);
   const cacheRef = useRef<Record<string, Segment[]>>({});
@@ -61,9 +66,14 @@ export function useSkipSegments(
 
     let cancelled = false;
 
-    fetch(
-      `https://api.theintrodb.org/v2/media?tmdb_id=${tmdbId}&season=${season}&episode=${episode}`
-    )
+    const params = new URLSearchParams({
+      tmdbId,
+      season: String(season),
+      episode: String(episode),
+      ...(imdbId ? { imdbId } : {}),
+    });
+
+    fetch(`/api/segments?${params}`)
       .then((r) => {
         if (!r.ok) return null;
         return r.json() as Promise<Record<string, RawSegment[]>>;
@@ -81,7 +91,7 @@ export function useSkipSegments(
     return () => {
       cancelled = true;
     };
-  }, [tmdbId, season, episode]);
+  }, [tmdbId, season, episode, imdbId]);
 
   return segments;
 }

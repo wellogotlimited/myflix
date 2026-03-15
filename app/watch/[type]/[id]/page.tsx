@@ -97,6 +97,7 @@ export default async function WatchPage({ params, searchParams }: WatchPageProps
         }}
         showNavigation={{
           showId: id,
+          imdbId: show.external_ids?.imdb_id,
           type,
           seasons: validSeasons,
           episodes,
