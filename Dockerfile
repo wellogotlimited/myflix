@@ -1,15 +1,14 @@
 FROM node:20-alpine AS deps
 WORKDIR /app
 RUN npm install -g pnpm
-COPY providers/ /providers/
-COPY myflix/package.json myflix/pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 
 FROM node:20-alpine AS builder
 WORKDIR /app
 RUN npm install -g pnpm
 COPY --from=deps /app/node_modules ./node_modules
-COPY myflix/ .
+COPY . .
 RUN pnpm build
 
 FROM node:20-alpine AS runner
