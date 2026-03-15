@@ -9,7 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@p-stream/providers": "file:../providers",
+    "@p-stream/providers": "github:p-stream/providers#production",
     "@phosphor-icons/react": "^2.1.10",
     "bcryptjs": "^3.0.3",
     "hls.js": "^1.6.15",

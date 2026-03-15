@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@p-stream/providers':
-        specifier: file:../providers
-        version: file:../providers
+        specifier: github:p-stream/providers#production
+        version: https://codeload.github.com/p-stream/providers/tar.gz/b3084e84184aeeb54d098a49eb1a0bfe824c5b6a
       '@phosphor-icons/react':
         specifier: ^2.1.10
         version: 2.1.10(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
@@ -463,8 +463,9 @@ packages:
     resolution: {integrity: sha512-nn5ozdjYQpUCZlWGuxcJY/KpxkWQs4DcbMCmKojjyrYDEAGy4Ce19NN4v5MduafTwJlbKc99UA8YhSVqq9yPZA==}
     engines: {node: '>=12.4.0'}
 
-  '@p-stream/providers@file:../providers':
-    resolution: {directory: ../providers, type: directory}
+  '@p-stream/providers@https://codeload.github.com/p-stream/providers/tar.gz/b3084e84184aeeb54d098a49eb1a0bfe824c5b6a':
+    resolution: {tarball: https://codeload.github.com/p-stream/providers/tar.gz/b3084e84184aeeb54d098a49eb1a0bfe824c5b6a}
+    version: 3.2.0
 
   '@panva/hkdf@1.2.1':
     resolution: {integrity: sha512-6oclG6Y3PiDFcoyk8srjLfVKyMfVCKJ27JwNPViuXziFpmdz+MZnZN/aKY0JGXgYuO/VghU0jcOAZgWXZ1Dmrw==}
@@ -2607,7 +2608,7 @@ snapshots:
 
   '@nolyfill/is-core-module@1.0.39': {}
 
-  '@p-stream/providers@file:../providers':
+  '@p-stream/providers@https://codeload.github.com/p-stream/providers/tar.gz/b3084e84184aeeb54d098a49eb1a0bfe824c5b6a':
     dependencies:
       abort-controller: 3.0.0
       cheerio: 1.0.0-rc.12
