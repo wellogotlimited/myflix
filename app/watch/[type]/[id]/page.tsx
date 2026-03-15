@@ -1,6 +1,9 @@
 import { notFound } from "next/navigation";
-import { getMovieDetails, getSeasonEpisodes, getShowDetails } from "@/lib/tmdb";
+import { getMovieDetails, getSeasonEpisodes, getShowDetails, getContentRating } from "@/lib/tmdb";
+import { requireProfile } from "@/lib/session";
+import { passesMaturityFilter } from "@/lib/maturity";
 import WatchClient from "@/components/WatchClient";
+import MaturityBlocked from "@/components/MaturityBlocked";
 
 interface WatchPageProps {
   params: Promise<{ type: string; id: string }>;
@@ -14,7 +17,17 @@ export default async function WatchPage({ params, searchParams }: WatchPageProps
   if (type !== "movie" && type !== "tv") notFound();
 
   if (type === "movie") {
-    const movie = await getMovieDetails(id);
+    const [movie, profile, rating] = await Promise.all([
+      getMovieDetails(id),
+      requireProfile(),
+      getContentRating(id, "movie"),
+    ]);
+
+    const maturityLevel = profile?.maturityLevel ?? "ADULT";
+    if (!passesMaturityFilter(rating, maturityLevel)) {
+      return <MaturityBlocked title={movie.title} backdropPath={movie.backdrop_path} />;
+    }
+
     const year = movie.release_date ? parseInt(movie.release_date.substring(0, 4), 10) : 0;
 
     return (
@@ -35,7 +48,17 @@ export default async function WatchPage({ params, searchParams }: WatchPageProps
     );
   }
 
-  const show = await getShowDetails(id);
+  const [show, profile, rating] = await Promise.all([
+    getShowDetails(id),
+    requireProfile(),
+    getContentRating(id, "tv"),
+  ]);
+
+  const maturityLevel = profile?.maturityLevel ?? "ADULT";
+  if (!passesMaturityFilter(rating, maturityLevel)) {
+    return <MaturityBlocked title={show.name} backdropPath={show.backdrop_path} />;
+  }
+
   const year = show.first_air_date ? parseInt(show.first_air_date.substring(0, 4), 10) : 0;
   const seasonNum = sp.season ? parseInt(sp.season, 10) : 1;
   const episodeNum = sp.episode ? parseInt(sp.episode, 10) : 1;

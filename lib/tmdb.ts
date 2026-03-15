@@ -510,6 +510,19 @@ export async function attachLogoBackdrops(items: TMDBItem[]): Promise<TMDBItem[]
   return results;
 }
 
+export async function getContentRating(id: string | number, type: "movie" | "tv"): Promise<string | null> {
+  if (type === "movie") {
+    const data = await tmdbFetch<TMDBMovieHoverDetails>(`/movie/${id}`, {
+      append_to_response: "release_dates",
+    });
+    return pickMovieCertification(data.release_dates);
+  }
+  const data = await tmdbFetch<TMDBTVHoverDetails>(`/tv/${id}`, {
+    append_to_response: "content_ratings",
+  });
+  return pickTVRating(data.content_ratings);
+}
+
 async function getMediaHoverData(id: number, type: "movie" | "tv") {
   if (type === "movie") {
     const data = await tmdbFetch<TMDBMovieHoverDetails>(`/movie/${id}`, {

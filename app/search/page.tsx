@@ -1,4 +1,6 @@
 import { attachCardContext, searchMulti } from "@/lib/tmdb";
+import { requireProfile } from "@/lib/session";
+import { passesMaturityFilter } from "@/lib/maturity";
 import MediaCard from "@/components/MediaCard";
 
 export default async function SearchPage({
@@ -6,9 +8,12 @@ export default async function SearchPage({
 }: {
   searchParams: Promise<{ q?: string }>;
 }) {
-  const { q } = await searchParams;
+  const [{ q }, profile] = await Promise.all([searchParams, requireProfile()]);
   const query = q || "";
-  const results = query ? await attachCardContext(await searchMulti(query)) : [];
+  const maturityLevel = profile?.maturityLevel ?? "ADULT";
+
+  const all = query ? await attachCardContext(await searchMulti(query)) : [];
+  const results = all.filter((item) => passesMaturityFilter(item.maturityRating, maturityLevel));
 
   return (
     <main className="min-h-screen pt-20 px-6 md:px-12">

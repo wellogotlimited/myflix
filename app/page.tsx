@@ -13,9 +13,12 @@ import {
   attachCardContext,
   getMediaType,
 } from "@/lib/tmdb";
+import { requireProfile } from "@/lib/session";
+import { passesMaturityFilter } from "@/lib/maturity";
 
 export default async function Home() {
   const [
+    profile,
     trendingRaw,
     popularMoviesRaw,
     popularShowsRaw,
@@ -23,6 +26,7 @@ export default async function Home() {
     topShowsRaw,
   ] =
     await Promise.all([
+      requireProfile(),
       getTrending(),
       getPopularMovies(),
       getPopularShows(),
@@ -30,12 +34,14 @@ export default async function Home() {
       getTopRatedShows(),
     ]);
 
+  const maturityLevel = profile?.maturityLevel ?? "ADULT";
+
   const [
-    trending,
-    popularMovies,
-    popularShows,
-    topMovies,
-    topShows,
+    trendingAll,
+    popularMoviesAll,
+    popularShowsAll,
+    topMoviesAll,
+    topShowsAll,
   ] = await Promise.all([
     attachCardContext(trendingRaw),
     attachCardContext(popularMoviesRaw),
@@ -43,6 +49,15 @@ export default async function Home() {
     attachCardContext(topMoviesRaw),
     attachCardContext(topShowsRaw),
   ]);
+
+  const filter = (items: typeof trendingAll) =>
+    items.filter((item) => passesMaturityFilter(item.maturityRating, maturityLevel));
+
+  const trending = filter(trendingAll);
+  const popularMovies = filter(popularMoviesAll);
+  const popularShows = filter(popularShowsAll);
+  const topMovies = filter(topMoviesAll);
+  const topShows = filter(topShowsAll);
 
   const hero = trending[0];
   const heroExtras = hero ? await getHeroExtras(hero.id, getMediaType(hero)) : null;
