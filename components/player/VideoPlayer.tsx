@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { CaretLeft, CaretRight, FastForward, Pause, Play } from "@phosphor-icons/react";
+import { CaretLeft, CaretRight, Pause, Play } from "@phosphor-icons/react";
+import { useSkipSegments } from "./hooks/useSkipSegments";
 import Hls from "hls.js";
 import type { TMDBEpisode, TMDBSeason } from "@/lib/tmdb";
 import Controls from "./Controls";
@@ -120,6 +121,24 @@ export default function VideoPlayer({
     }
     return null;
   }, [showNavigation]);
+
+  // Fetch real intro/recap/credits/preview timestamps from TheIntroDB
+  const segments = useSkipSegments(
+    showNavigation?.showId ?? null,
+    showNavigation?.currentSeason ?? null,
+    showNavigation?.currentEpisode ?? null
+  );
+
+  // Which segment is the player currently inside (if any)
+  const activeSegment = useMemo(() => {
+    if (!segments.length) return null;
+    return (
+      segments.find((seg) => {
+        const end = seg.endSec ?? (duration || Infinity);
+        return currentTime >= seg.startSec && currentTime < end;
+      }) ?? null
+    );
+  }, [segments, currentTime, duration]);
   const customCaptions = useMemo(
     () => (customCaptionState.streamKey === streamKey ? customCaptionState.tracks : []),
     [customCaptionState, streamKey]
@@ -414,11 +433,12 @@ export default function VideoPlayer({
     onEpisodeSelect?.(nextEpisode);
   }, [nextEpisode, cancelAutoNext, onEpisodeSelect]);
 
-  const handleSkipIntro = useCallback(() => {
+  const handleSkipSegment = useCallback(() => {
     const video = videoRef.current;
-    if (!video) return;
-    video.currentTime = Math.min(video.duration, video.currentTime + 85);
-  }, []);
+    if (!video || !activeSegment) return;
+    const target = activeSegment.endSec ?? video.duration;
+    video.currentTime = Math.min(video.duration, target);
+  }, [activeSegment]);
 
   useEffect(() => {
     if (!activeCaption?.url) {
@@ -822,33 +842,44 @@ export default function VideoPlayer({
         />
       )}
 
-      {/* Skip Intro — TV shows only, appears from 5s until 5 min mark */}
-      {!!showNavigation && !videoEnded && duration > 120 &&
-        currentTime >= 5 && currentTime <= Math.min(300, duration * 0.25) && (
-        <div className="absolute bottom-24 right-4 z-30 md:right-7">
-          <button
-            onClick={handleSkipIntro}
-            className="flex items-center gap-2 rounded border border-white/50 bg-black/60 px-4 py-2 text-sm font-semibold text-white backdrop-blur-sm transition hover:bg-white hover:text-black"
-          >
-            Skip Intro
-            <FastForward size={14} weight="fill" />
-          </button>
-        </div>
-      )}
+      {/* Segment skip button — shown when inside an intro/recap/credits/preview */}
+      {activeSegment && !videoEnded && (() => {
+        // Credits that run to the end of video → show "Next Episode" if available
+        const isEndingCredits =
+          activeSegment.type === "credits" && activeSegment.endSec === null;
 
-      {/* Skip Credits / Next Episode — last 3 min when next ep exists */}
-      {nextEpisode && !videoEnded && duration > 300 &&
-        duration - currentTime < 180 && duration - currentTime > 3 && (
-        <div className="absolute bottom-24 right-4 z-30 md:right-7">
-          <button
-            onClick={handleNextEpisode}
-            className="flex items-center gap-2 rounded border border-white/50 bg-black/60 px-4 py-2 text-sm font-semibold text-white backdrop-blur-sm transition hover:bg-white hover:text-black"
-          >
-            Next Episode
-            <CaretRight size={14} weight="bold" />
-          </button>
-        </div>
-      )}
+        if (isEndingCredits && nextEpisode) {
+          return (
+            <div className="absolute bottom-24 right-4 z-30 md:right-7">
+              <button
+                onClick={handleNextEpisode}
+                className="flex items-center gap-2 rounded border border-white/50 bg-black/60 px-4 py-2 text-sm font-semibold text-white backdrop-blur-sm transition hover:bg-white hover:text-black"
+              >
+                Next Episode
+                <CaretRight size={14} weight="bold" />
+              </button>
+            </div>
+          );
+        }
+
+        const label =
+          activeSegment.type === "intro" ? "Skip Intro"
+          : activeSegment.type === "recap" ? "Skip Recap"
+          : activeSegment.type === "credits" ? "Skip Credits"
+          : "Skip Preview";
+
+        return (
+          <div className="absolute bottom-24 right-4 z-30 md:right-7">
+            <button
+              onClick={handleSkipSegment}
+              className="flex items-center gap-2 rounded border border-white/50 bg-black/60 px-4 py-2 text-sm font-semibold text-white backdrop-blur-sm transition hover:bg-white hover:text-black"
+            >
+              {label}
+              <CaretRight size={14} weight="bold" />
+            </button>
+          </div>
+        );
+      })()}
 
       {/* Auto-next countdown overlay */}
       {autoNextCountdown !== null && nextEpisode && (
