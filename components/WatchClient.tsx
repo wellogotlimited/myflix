@@ -392,7 +392,16 @@ export default function WatchClient({
           </button>
         </div>
       ) : (
-        <ProviderStatus sources={sources} />
+        <ProviderStatus
+          sources={sources}
+          backdropPath={activeMedia.backdropPath}
+          title={activeTitle}
+          subtitle={
+            activeMedia.type === "show" && activeMedia.season && activeMedia.episode
+              ? `S${activeMedia.season.number} · E${activeMedia.episode.number}${activeMedia.episode.title ? ` · ${activeMedia.episode.title}` : ""}`
+              : undefined
+          }
+        />
       )}
     </div>
   );
