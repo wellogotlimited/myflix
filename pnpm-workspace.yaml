@@ -1,0 +1,4 @@
+allowBuilds:
+  '@p-stream/providers': true
+  sharp: true
+  unrs-resolver: true
