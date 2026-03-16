@@ -3,6 +3,7 @@
 import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useState, useEffect, useRef } from "react";
+import { Gear } from "@phosphor-icons/react";
 import ProfileAvatar from "./ProfileAvatar";
 
 interface Profile {
@@ -100,6 +101,13 @@ export default function ProfileSwitcher() {
             className="flex w-full items-center gap-3 px-4 py-3 text-sm text-gray-300 transition hover:bg-white/10 hover:text-white"
           >
             Manage Profiles
+          </button>
+          <button
+            onClick={() => { setOpen(false); router.push("/settings"); }}
+            className="flex w-full items-center gap-3 px-4 py-3 text-sm text-gray-300 transition hover:bg-white/10 hover:text-white"
+          >
+            <Gear size={18} />
+            Settings
           </button>
           <button
             onClick={() => { setOpen(false); router.push("/account"); }}

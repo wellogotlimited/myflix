@@ -66,6 +66,29 @@ interface TMDBList {
   results: TMDBItem[];
 }
 
+function normalizeListResult(item: TMDBItem, mediaType?: "movie" | "tv") {
+  return mediaType ? { ...item, media_type: mediaType } : item;
+}
+
+async function tmdbFetchList(
+  path: string,
+  params: Record<string, string> = {},
+  pages = 1,
+  mediaType?: "movie" | "tv"
+): Promise<TMDBItem[]> {
+  const pageCount = Math.max(1, pages);
+  const responses = await Promise.all(
+    Array.from({ length: pageCount }, (_, index) =>
+      tmdbFetch<TMDBList>(path, { ...params, page: String(index + 1) })
+    )
+  );
+
+  return responses
+    .flatMap((data) => data.results)
+    .filter((item) => item.backdrop_path)
+    .map((item) => normalizeListResult(item, mediaType));
+}
+
 export interface TMDBMovieDetails {
   id: number;
   title: string;
@@ -142,48 +165,64 @@ export function getMediaType(item: TMDBItem): "movie" | "tv" {
   return item.title ? "movie" : "tv";
 }
 
-export async function getTrending(): Promise<TMDBItem[]> {
-  const data = await tmdbFetch<TMDBList>("/trending/all/week");
-  return data.results.filter((r) => r.backdrop_path);
-}
-
-export async function getPopularMovies(): Promise<TMDBItem[]> {
-  const data = await tmdbFetch<TMDBList>("/movie/popular");
-  return data.results.filter((r) => r.backdrop_path).map((r) => ({ ...r, media_type: "movie" }));
-}
-
-export async function getPopularShows(): Promise<TMDBItem[]> {
-  const data = await tmdbFetch<TMDBList>("/tv/popular");
-  return data.results.filter((r) => r.backdrop_path).map((r) => ({ ...r, media_type: "tv" }));
-}
-
-export async function getTopRatedMovies(): Promise<TMDBItem[]> {
-  const data = await tmdbFetch<TMDBList>("/movie/top_rated");
-  return data.results.filter((r) => r.backdrop_path).map((r) => ({ ...r, media_type: "movie" }));
-}
-
-export async function getTopRatedShows(): Promise<TMDBItem[]> {
-  const data = await tmdbFetch<TMDBList>("/tv/top_rated");
-  return data.results.filter((r) => r.backdrop_path).map((r) => ({ ...r, media_type: "tv" }));
-}
-
-export async function getUpcomingMovies(): Promise<TMDBItem[]> {
-  const data = await tmdbFetch<TMDBList>("/movie/upcoming");
-  return data.results.filter((r) => r.backdrop_path).map((r) => ({ ...r, media_type: "movie" }));
-}
-
-export async function getOnTheAirShows(): Promise<TMDBItem[]> {
-  const data = await tmdbFetch<TMDBList>("/tv/on_the_air");
-  return data.results.filter((r) => r.backdrop_path).map((r) => ({ ...r, media_type: "tv" }));
-}
-
-export async function getAnimeShows(): Promise<TMDBItem[]> {
-  const data = await tmdbFetch<TMDBList>("/discover/tv", {
-    with_genres: "16",
-    with_origin_country: "JP",
-    sort_by: "popularity.desc",
+export function dedupeTMDBItems(items: TMDBItem[]): TMDBItem[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const key = `${getMediaType(item)}:${item.id}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
   });
-  return data.results.filter((r) => r.backdrop_path).map((r) => ({ ...r, media_type: "tv" }));
+}
+
+export async function getTrending(pages = 1): Promise<TMDBItem[]> {
+  return tmdbFetchList("/trending/all/week", {}, pages);
+}
+
+export async function getPopularMovies(pages = 1): Promise<TMDBItem[]> {
+  return tmdbFetchList("/movie/popular", {}, pages, "movie");
+}
+
+export async function getPopularShows(pages = 1): Promise<TMDBItem[]> {
+  return tmdbFetchList("/tv/popular", {}, pages, "tv");
+}
+
+export async function getTopRatedMovies(pages = 1): Promise<TMDBItem[]> {
+  return tmdbFetchList("/movie/top_rated", {}, pages, "movie");
+}
+
+export async function getTopRatedShows(pages = 1): Promise<TMDBItem[]> {
+  return tmdbFetchList("/tv/top_rated", {}, pages, "tv");
+}
+
+export async function getUpcomingMovies(pages = 1): Promise<TMDBItem[]> {
+  return tmdbFetchList("/movie/upcoming", {}, pages, "movie");
+}
+
+export async function getOnTheAirShows(pages = 1): Promise<TMDBItem[]> {
+  return tmdbFetchList("/tv/on_the_air", {}, pages, "tv");
+}
+
+export async function getAnimeShows(pages = 1): Promise<TMDBItem[]> {
+  return tmdbFetchList(
+    "/discover/tv",
+    {
+      with_genres: "16",
+      with_origin_country: "JP",
+      sort_by: "popularity.desc",
+    },
+    pages,
+    "tv"
+  );
+}
+
+export async function getGenreItems(genreId: string, type: "movie" | "tv" = "movie"): Promise<TMDBItem[]> {
+  return tmdbFetchList(
+    `/discover/${type}`,
+    { with_genres: genreId, sort_by: "popularity.desc" },
+    1,
+    type
+  );
 }
 
 export async function searchMulti(query: string): Promise<TMDBItem[]> {

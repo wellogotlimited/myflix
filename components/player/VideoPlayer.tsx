@@ -2,14 +2,17 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { CaretLeft, CaretRight, Pause, Play } from "@phosphor-icons/react";
+import { CaretLeft, CaretRight, FastForward, Lock, Pause, Play, Rewind } from "@phosphor-icons/react";
 import { useSkipSegments } from "./hooks/useSkipSegments";
 import Hls from "hls.js";
 import type { TMDBEpisode, TMDBSeason } from "@/lib/tmdb";
 import Controls from "./Controls";
 import EpisodeNavigator from "./EpisodeNavigator";
+import MobileControls from "./MobileControls";
+import MobileEpisodeDrawer from "./MobileEpisodeDrawer";
 import SubtitleRenderer, { CaptionCue, parseCaptions } from "./SubtitleRenderer";
 import { QUALITY_ORDER } from "./utils";
+import { sendDebugEvent } from "@/lib/network-debug-client";
 
 export interface CaptionTrack {
   id: string;
@@ -28,12 +31,14 @@ interface StreamData {
   headers?: Record<string, string>;
   preferredHeaders?: Record<string, string>;
   captions?: Array<{ language: string; url: string; type: string }>;
+  flags?: string[];
 }
 
 interface VideoPlayerProps {
   stream: StreamData;
   onError?: (msg: string) => void;
   title?: string;
+  debugSessionId?: string;
   showNavigation?: {
     showId: string;
     imdbId?: string | null;
@@ -52,10 +57,28 @@ interface VideoPlayerProps {
   onProgressUpdate?: (currentTime: number, duration: number) => void;
 }
 
+type FullscreenCapableElement = HTMLDivElement & {
+  webkitRequestFullscreen?: () => Promise<void> | void;
+  webkitRequestFullScreen?: () => Promise<void> | void;
+};
+
+type FullscreenCapableVideo = HTMLVideoElement & {
+  webkitEnterFullscreen?: () => void;
+  webkitSupportsFullscreen?: boolean;
+  webkitDisplayingFullscreen?: boolean;
+};
+
+type FullscreenCapableDocument = Document & {
+  webkitFullscreenElement?: Element | null;
+  webkitExitFullscreen?: () => Promise<void> | void;
+  webkitCancelFullScreen?: () => Promise<void> | void;
+};
+
 export default function VideoPlayer({
   stream,
   onError,
   title,
+  debugSessionId,
   showNavigation,
   onEpisodeSelect,
   initialPosition,
@@ -100,17 +123,61 @@ export default function VideoPlayer({
   const [centerIndicator, setCenterIndicator] = useState<"play" | "pause" | null>(null);
   const [videoEnded, setVideoEnded] = useState(false);
   const [autoNextCountdown, setAutoNextCountdown] = useState<number | null>(null);
+  const [locked, setLocked] = useState(false);
+  const [doubleTapInfo, setDoubleTapInfo] = useState<{ side: "left" | "right"; key: number } | null>(null);
+  const [isTouchDevice] = useState(() =>
+    typeof navigator !== "undefined" ? navigator.maxTouchPoints > 0 : false
+  );
+  const [devMode] = useState(() =>
+    typeof window !== "undefined" && localStorage.getItem("myflix-dev-mode") === "true"
+  );
+  const [proxyEnabled] = useState(() => {
+    if (typeof window === "undefined") return false;
+    const val = localStorage.getItem("myflix-proxy-enabled");
+    return val === null ? false : val === "true";
+  });
+  const [debugLog, setDebugLog] = useState<string[]>([]);
+  const [hlsMode, setHlsMode] = useState<"hlsjs" | "native" | "file" | "none">("none");
+  const [manifestPreview, setManifestPreview] = useState<string | null>(null);
+  const [manifestUrl, setManifestUrl] = useState<string>("");
+
+  function dbg(msg: string) {
+    setDebugLog((prev) => [...prev.slice(-50), `${new Date().toISOString().slice(11, 23)} ${msg}`]);
+    if (devMode) {
+      sendDebugEvent(debugSessionId, {
+        kind: "player-event",
+        source: "player",
+        message: msg,
+      });
+    }
+  }
+
+  async function fetchManifestPreview(url: string) {
+    try {
+      dbg(`fetching manifest for preview...`);
+      const res = await fetch(url);
+      const text = await res.text();
+      dbg(`manifest fetch status=${res.status} length=${text.length}`);
+      setManifestPreview(text.slice(0, 1000));
+    } catch (e) {
+      dbg(`manifest fetch error: ${e}`);
+      setManifestPreview(`ERROR: ${e}`);
+    }
+  }
   const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const spaceHeldRef = useRef(false);
   const spaceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const preBoostSpeedRef = useRef(1);
   const centerIndicatorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastTapRef = useRef<{ time: number; x: number } | null>(null);
+  const lastTouchTimeRef = useRef(0);
 
   const streamKey = useMemo(
     () => JSON.stringify([stream.type, stream.playlist, stream.qualities, stream.captions]),
     [stream]
   );
+  const playbackStream = stream;
 
   // Next episode within the current season (null if last episode or no show)
   const nextEpisode = useMemo(() => {
@@ -180,6 +247,13 @@ export default function VideoPlayer({
     }, 3000);
   }, [playing, showEpisodePanel]);
 
+  // Force landscape orientation on mobile
+  useEffect(() => {
+    const orientation = screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> };
+    orientation.lock?.("landscape").catch(() => {});
+    return () => { orientation.unlock?.(); };
+  }, []);
+
   useEffect(() => {
     if (showEpisodePanel) {
       if (idleTimer.current) clearTimeout(idleTimer.current);
@@ -204,43 +278,57 @@ export default function VideoPlayer({
       hlsRef.current = null;
     }
 
+    // Hard-reset video element so the browser's MSE pipeline doesn't get stuck
+    video.removeAttribute("src");
+    video.load();
+
     queueMicrotask(() => {
       setLoading(true);
       setQualities([]);
       setCurrentQuality("auto");
     });
 
-    if (stream.type === "hls" && stream.playlist) {
+    if (playbackStream.type === "hls" && playbackStream.playlist) {
+      dbg(`stream=hls url=${playbackStream.playlist.slice(0, 80)}`);
+      dbg(`headers=${JSON.stringify({ ...playbackStream.preferredHeaders, ...playbackStream.headers })}`);
+      const supportsNativeHls = video.canPlayType("application/vnd.apple.mpegurl") !== "";
+      dbg(`Hls.isSupported=${Hls.isSupported()} nativeHls=${supportsNativeHls} touch=${isTouchDevice}`);
+      // Use HLS.js whenever it's supported (p-stream approach: native HLS only when HLS.js unavailable)
+      // All requests go through /api/proxy which sets Referer/Origin server-side
       if (Hls.isSupported()) {
+        setHlsMode("hlsjs");
+        dbg("engine=hls.js");
+
+        const hlsHeaders = { ...playbackStream.preferredHeaders, ...playbackStream.headers };
+        const hasHlsHeaders = Object.keys(hlsHeaders).length > 0;
+        const shouldProxyHls = hasHlsHeaders && (proxyEnabled || isTouchDevice);
+        const hlsSource = shouldProxyHls
+          ? `/api/proxy?payload=${encodePayload({
+              url: playbackStream.playlist,
+              type: "hls",
+              headers: hlsHeaders,
+              debugSessionId,
+            })}`
+          : playbackStream.playlist;
+        dbg(`hlsjs src=${shouldProxyHls ? "[proxied]" : "[direct]"}`);
+        setManifestUrl(hlsSource);
+
         const hls = new Hls({
-          maxBufferLength: 120,
-          maxMaxBufferLength: 240,
-          fragLoadingMaxRetry: 10,
-          fragLoadingRetryDelay: 1000,
+          maxBufferLength: 30,
+          maxMaxBufferLength: 60,
+          fragLoadingMaxRetry: 6,
+          fragLoadingRetryDelay: 1500,
           renderTextTracksNatively: false,
-          xhrSetup: (xhr) => {
-            const headers = {
-              ...stream.preferredHeaders,
-              ...stream.headers,
-            };
-            for (const [key, value] of Object.entries(headers)) {
-              try {
-                xhr.setRequestHeader(key, value);
-              } catch {
-                // Some headers can't be set.
-              }
-            }
-          },
         });
         hlsRef.current = hls;
 
-        hls.on(Hls.Events.MANIFEST_PARSED, (_event, _data) => {
-          if (initialPosition && initialPosition > 5) {
-            video.currentTime = initialPosition;
-          }
-          video.play().catch(() => {});
-        });
+        const mediaAttachedTimer = setTimeout(() => dbg("WARN: media attached never fired after 4s"), 4000);
+        hls.on(Hls.Events.MEDIA_ATTACHED, () => { clearTimeout(mediaAttachedTimer); dbg("media attached"); });
+        hls.on(Hls.Events.MANIFEST_LOADING, (_e, data) => dbg(`manifest loading: ${data.url.slice(0, 60)}`));
+        hls.on(Hls.Events.MANIFEST_LOADED, (_e, data) => dbg(`manifest loaded status=${JSON.stringify((data.networkDetails as XMLHttpRequest)?.status)}`));
+
         hls.on(Hls.Events.MANIFEST_PARSED, (_event, data) => {
+          dbg(`manifest parsed levels=${data.levels.length}`);
           const levelsSet = new Set<string>();
           data.levels.forEach((level) => {
             const h = level.height;
@@ -254,40 +342,82 @@ export default function VideoPlayer({
           const sorted = QUALITY_ORDER.filter((q) => levelsSet.has(q)) as string[];
           setQualities(sorted);
           setLoading(false);
+          if (initialPosition && initialPosition > 5) {
+            video.currentTime = initialPosition;
+          }
+          video.play().catch((e) => dbg(`play() rejected: ${e}`));
         });
 
         hls.on(Hls.Events.ERROR, (_event, data) => {
+          dbg(`hls error fatal=${data.fatal} type=${data.type} details=${data.details}`);
           if (data.fatal) {
             onError?.(`Playback error: ${data.type}`);
           }
         });
 
-        hls.loadSource(stream.playlist);
         hls.attachMedia(video);
-      } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
-        video.src = stream.playlist;
-        video.addEventListener(
-        "loadedmetadata",
-        () => {
+        hls.loadSource(hlsSource);
+        dbg("hls.attachMedia+loadSource called");
+      } else if (supportsNativeHls) {
+        setHlsMode("native");
+        dbg("engine=native-hls");
+        // iOS can't set request headers — proxy the manifest so the server adds them
+        const headers = { ...playbackStream.preferredHeaders, ...playbackStream.headers };
+        const hasHeaders = Object.keys(headers).length > 0;
+        const shouldProxyNative = hasHeaders && (proxyEnabled || isTouchDevice);
+        const manifestUrl = shouldProxyNative
+          ? `/api/proxy?payload=${encodePayload({
+              url: playbackStream.playlist,
+              type: "hls",
+              headers,
+              debugSessionId,
+            })}`
+          : playbackStream.playlist;
+        dbg(`native src=${shouldProxyNative ? "[proxied]" : "[direct]"} proxy=${proxyEnabled}`);
+        setManifestUrl(manifestUrl);
+        video.src = manifestUrl;
+        video.addEventListener("loadedmetadata", () => {
+          dbg("native: loadedmetadata fired");
           setLoading(false);
+          setShowControls(true);
           if (initialPosition && initialPosition > 5) {
             video.currentTime = initialPosition;
           }
-          video.play().catch(() => {});
-        },
-        { once: true }
-      );
+          // iOS requires play() from a user gesture — attempt it but don't force
+          video.play().catch((e) => dbg(`native play() blocked: ${e} — tap play to start`));
+        }, { once: true });
+        video.addEventListener("error", () => {
+          const err = video.error;
+          dbg(`native error code=${err?.code} msg=${err?.message}`);
+          onError?.("Stream failed to load. Try again.");
+          setLoading(false);
+        }, { once: true });
       } else {
+        setHlsMode("none");
+        dbg("engine=none (HLS not supported)");
         onError?.("HLS is not supported in this browser.");
       }
-    } else if (stream.type === "file" && stream.qualities) {
+    } else if (playbackStream.type === "file" && playbackStream.qualities) {
+      setHlsMode("file");
+      dbg(`stream=file qualities=${Object.keys(playbackStream.qualities).join(",")}`);
+      const fileHeaders = { ...playbackStream.preferredHeaders, ...playbackStream.headers };
+      const shouldProxyFile = Object.keys(fileHeaders).length > 0;
       const available: string[] = [];
       let bestUrl = "";
       for (const q of QUALITY_ORDER) {
-        const entry = stream.qualities[q];
+        const entry = playbackStream.qualities[q];
         if (entry) {
           available.push(q);
-          if (!bestUrl) bestUrl = entry.url;
+          if (!bestUrl) {
+            bestUrl = shouldProxyFile
+              ? `/api/proxy?payload=${encodePayload({
+                  url: entry.url,
+                  type: "mp4",
+                  headers: fileHeaders,
+                  debugSessionId,
+                })}`
+              : entry.url;
+          }
         }
       }
       queueMicrotask(() => {
@@ -316,7 +446,7 @@ export default function VideoPlayer({
         hlsRef.current = null;
       }
     };
-  }, [stream, onError]);
+  }, [initialPosition, onError, playbackStream]);
 
   // Reset ended/countdown state whenever a new stream is loaded
   useEffect(() => {
@@ -383,9 +513,23 @@ export default function VideoPlayer({
   }, []);
 
   useEffect(() => {
-    const handler = () => setIsFullscreen(!!document.fullscreenElement);
+    const doc = document as FullscreenCapableDocument;
+    const video = videoRef.current as FullscreenCapableVideo | null;
+    const handler = () =>
+      setIsFullscreen(
+        !!doc.fullscreenElement ||
+          !!doc.webkitFullscreenElement ||
+          !!video?.webkitDisplayingFullscreen
+      );
+
     document.addEventListener("fullscreenchange", handler);
-    return () => document.removeEventListener("fullscreenchange", handler);
+    document.addEventListener("webkitfullscreenchange", handler as EventListener);
+    handler();
+
+    return () => {
+      document.removeEventListener("fullscreenchange", handler);
+      document.removeEventListener("webkitfullscreenchange", handler as EventListener);
+    };
   }, []);
 
   useEffect(() => {
@@ -525,11 +669,55 @@ export default function VideoPlayer({
     video.playbackRate = speed;
   }, []);
 
-  const toggleFullscreen = useCallback(() => {
-    const container = containerRef.current;
-    if (!container) return;
-    if (document.fullscreenElement) document.exitFullscreen();
-    else container.requestFullscreen();
+  const toggleFullscreen = useCallback(async () => {
+    const doc = document as FullscreenCapableDocument;
+    const container = containerRef.current as FullscreenCapableElement | null;
+    const video = videoRef.current as FullscreenCapableVideo | null;
+
+    if (
+      doc.fullscreenElement ||
+      doc.webkitFullscreenElement ||
+      video?.webkitDisplayingFullscreen
+    ) {
+      try {
+        if (doc.exitFullscreen) {
+          await doc.exitFullscreen();
+          return;
+        }
+        if (doc.webkitExitFullscreen) {
+          await doc.webkitExitFullscreen();
+          return;
+        }
+        if (doc.webkitCancelFullScreen) {
+          await doc.webkitCancelFullScreen();
+          return;
+        }
+      } catch {
+        return;
+      }
+    }
+
+    if (!container && !video) return;
+
+    try {
+      if (container?.requestFullscreen) {
+        await container.requestFullscreen();
+        return;
+      }
+      if (container?.webkitRequestFullscreen) {
+        await container.webkitRequestFullscreen();
+        return;
+      }
+      if (container?.webkitRequestFullScreen) {
+        await container.webkitRequestFullScreen();
+        return;
+      }
+      if (video?.webkitSupportsFullscreen && video.webkitEnterFullscreen) {
+        video.webkitEnterFullscreen();
+      }
+    } catch {
+      // Ignore unsupported fullscreen failures.
+    }
   }, []);
 
   const handlePipToggle = useCallback(() => {
@@ -573,19 +761,29 @@ export default function VideoPlayer({
           if (levelIdx >= 0) hls.currentLevel = levelIdx;
         }
         setCurrentQuality(quality);
-      } else if (stream.type === "file" && stream.qualities) {
-        const entry = stream.qualities[quality];
+      } else if (playbackStream.type === "file" && playbackStream.qualities) {
+        const entry = playbackStream.qualities[quality];
         if (entry && videoRef.current) {
+          const fileHeaders = { ...playbackStream.preferredHeaders, ...playbackStream.headers };
+          const nextUrl =
+            Object.keys(fileHeaders).length > 0
+              ? `/api/proxy?payload=${encodePayload({
+                  url: entry.url,
+                  type: "mp4",
+                  headers: fileHeaders,
+                  debugSessionId,
+                })}`
+              : entry.url;
           const wasPlaying = !videoRef.current.paused;
           const previousTime = videoRef.current.currentTime;
-          videoRef.current.src = entry.url;
+          videoRef.current.src = nextUrl;
           videoRef.current.currentTime = previousTime;
           if (wasPlaying) videoRef.current.play();
           setCurrentQuality(quality);
         }
       }
     },
-    [stream]
+    [playbackStream]
   );
 
   const cycleSpeed = useCallback(
@@ -767,13 +965,62 @@ export default function VideoPlayer({
   ]);
 
   const handleVideoClick = useCallback(() => {
+    if (Date.now() - lastTouchTimeRef.current < 600) return;
     handlePlayPause();
     resetIdleTimer();
   }, [handlePlayPause, resetIdleTimer]);
 
   const handleDoubleClick = useCallback(() => {
+    if (Date.now() - lastTouchTimeRef.current < 600) return;
     toggleFullscreen();
   }, [toggleFullscreen]);
+
+  const handleContainerTouchEnd = useCallback(
+    (e: React.TouchEvent<HTMLDivElement>) => {
+      lastTouchTimeRef.current = Date.now();
+
+      if (locked) return;
+      const target = e.target as HTMLElement | null;
+      if (target?.closest("[data-player-ui]")) return;
+
+      const touch = e.changedTouches[0];
+      if (!touch) return;
+
+      const now = Date.now();
+      const containerWidth = containerRef.current?.clientWidth ?? window.innerWidth;
+      const x = touch.clientX;
+      const isLeftHalf = x < containerWidth / 2;
+      const last = lastTapRef.current;
+
+      if (last && now - last.time < 300 && Math.abs(x - last.x) < 80) {
+        // Double-tap → seek
+        lastTapRef.current = null;
+        const video = videoRef.current;
+        if (!video) return;
+        if (isLeftHalf) {
+          video.currentTime = Math.max(0, video.currentTime - 10);
+          setDoubleTapInfo((prev) => ({ side: "left", key: (prev?.key ?? 0) + 1 }));
+        } else {
+          video.currentTime = Math.min(video.duration, video.currentTime + 10);
+          setDoubleTapInfo((prev) => ({ side: "right", key: (prev?.key ?? 0) + 1 }));
+        }
+        setTimeout(() => setDoubleTapInfo(null), 700);
+        setShowControls(true);
+        resetIdleTimer();
+      } else {
+        // Single tap → toggle controls
+        lastTapRef.current = { time: now, x };
+        if (showControls) {
+          setShowControls(false);
+          if (idleTimer.current) clearTimeout(idleTimer.current);
+        } else {
+          setShowControls(true);
+          resetIdleTimer();
+        }
+      }
+    },
+    [locked, showControls, resetIdleTimer]
+  );
 
   return (
     <div
@@ -783,6 +1030,7 @@ export default function VideoPlayer({
       }`}
       onMouseMove={resetIdleTimer}
       onMouseLeave={() => playing && !showEpisodePanel && setShowControls(false)}
+      onTouchEnd={handleContainerTouchEnd}
     >
       <video
         ref={videoRef}
@@ -792,8 +1040,8 @@ export default function VideoPlayer({
         onDoubleClick={handleDoubleClick}
       />
 
-      {showControls && (title || showNavigation) && (
-        <div className="pointer-events-none absolute left-0 right-0 top-0 z-20 bg-gradient-to-b from-black/75 via-black/25 to-transparent px-5 pb-10 pt-6 md:px-7 md:pt-7">
+      {!isTouchDevice && showControls && (title || showNavigation) && (
+        <div className="pointer-events-none absolute left-0 right-0 top-0 z-20 flex flex-col bg-gradient-to-b from-black/75 via-black/25 to-transparent px-5 pb-10 pt-6 md:px-7 md:pt-7">
           <div className="pointer-events-auto min-w-0">
             <div className="flex items-center gap-2 text-sm text-white/75">
               <Link
@@ -821,11 +1069,19 @@ export default function VideoPlayer({
       )}
 
       {showNavigation && showEpisodePanel && (
-        <EpisodeNavigator
-          showNavigation={showNavigation}
-          onClose={() => setShowEpisodePanel(false)}
-          onEpisodeSelect={onEpisodeSelect}
-        />
+        isTouchDevice ? (
+          <MobileEpisodeDrawer
+            showNavigation={showNavigation}
+            onClose={() => setShowEpisodePanel(false)}
+            onEpisodeSelect={onEpisodeSelect}
+          />
+        ) : (
+          <EpisodeNavigator
+            showNavigation={showNavigation}
+            onClose={() => setShowEpisodePanel(false)}
+            onEpisodeSelect={onEpisodeSelect}
+          />
+        )
       )}
 
       {loading && (
@@ -920,6 +1176,7 @@ export default function VideoPlayer({
         </div>
       )}
 
+      {!isTouchDevice && (
       <div
         className={`pointer-events-none absolute inset-0 transition-opacity duration-300 ${
           showControls ? "opacity-100" : "opacity-0"
@@ -959,8 +1216,126 @@ export default function VideoPlayer({
           }}
         />
       </div>
+      )}
+
+      {/* Mobile controls */}
+      {isTouchDevice && (
+      <div className={`absolute inset-0 transition-opacity duration-300 ${showControls && !locked ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
+        <MobileControls
+          playing={playing}
+          currentTime={currentTime}
+          duration={duration}
+          buffered={buffered}
+          isFullscreen={isFullscreen}
+          playbackRate={playbackRate}
+          title={title}
+          hasEpisodes={!!showNavigation}
+          qualities={qualities}
+          currentQuality={currentQuality}
+          captions={captions}
+          activeCaptionIdx={activeCaptionIdx}
+          subtitleDelay={subtitleDelay}
+          onPlayPause={handlePlayPause}
+          onSeek={handleSeek}
+          onLock={() => { setLocked(true); setShowControls(false); }}
+          onFullscreenToggle={toggleFullscreen}
+          onEpisodesToggle={() => { setShowControls(true); setShowEpisodePanel((prev) => !prev); }}
+          onSpeedChange={handleSpeedChange}
+          onQualityChange={handleQualityChange}
+          onCaptionChange={setActiveCaptionIdx}
+          onSubtitleDelayChange={handleSubtitleDelayChange}
+        />
+      </div>
+      )}
+
+      {/* Lock screen overlay — mobile only */}
+      {isTouchDevice && locked && (
+        <div className="pointer-events-none absolute inset-0 z-30">
+          <button
+            type="button"
+            onClick={() => { setLocked(false); setShowControls(true); resetIdleTimer(); }}
+            data-player-ui
+            className="pointer-events-auto absolute bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-2 rounded-full bg-black/55 px-5 py-3 text-sm font-medium text-white backdrop-blur-sm"
+          >
+            <Lock size={18} weight="fill" />
+            Tap to unlock
+          </button>
+        </div>
+      )}
+
+      {/* Dev mode debug overlay */}
+      {devMode && (
+        <div className="absolute left-0 top-0 z-[999] max-w-[100vw] p-2" style={{ maxWidth: "100vw" }}>
+          <div className="rounded-lg bg-black/85 p-2 font-mono text-[10px] leading-tight text-green-400 backdrop-blur-sm" style={{ maxWidth: "calc(100vw - 16px)" }}>
+            <div className="mb-1 flex flex-wrap gap-x-3 gap-y-0.5 text-white/60">
+              <span>engine: <span className="text-yellow-300">{hlsMode}</span></span>
+              <span>touch: <span className="text-yellow-300">{String(isTouchDevice)}</span></span>
+              <span>quality: <span className="text-yellow-300">{currentQuality}</span></span>
+              <span>{Math.floor(currentTime)}s / {Math.floor(duration)}s</span>
+              <span>buf: {Math.floor(buffered)}s</span>
+              <span className={loading ? "text-red-400" : "text-green-400"}>{loading ? "loading" : "ready"}</span>
+            </div>
+            <div className="max-h-32 overflow-y-auto mb-1">
+              {debugLog.map((line, i) => (
+                <div key={i} className="text-green-300 break-all">{line}</div>
+              ))}
+              {debugLog.length === 0 && <div className="text-white/30">no logs yet</div>}
+            </div>
+            {manifestUrl && (
+              <button
+                type="button"
+                onClick={() => fetchManifestPreview(manifestUrl)}
+                className="mb-1 rounded bg-white/10 px-2 py-0.5 text-[10px] text-white/80 active:bg-white/20"
+              >
+                Fetch Manifest
+              </button>
+            )}
+            {manifestPreview && (
+              <div className="mt-1 max-h-40 overflow-y-auto rounded bg-black/60 p-1">
+                <pre className="whitespace-pre-wrap break-all text-[9px] text-cyan-300">{manifestPreview}</pre>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Double-tap seek indicator — mobile only */}
+      {isTouchDevice && doubleTapInfo && (
+        <div
+          key={doubleTapInfo.key}
+          className={`pointer-events-none absolute top-1/2 z-30 -translate-y-1/2 ${
+            doubleTapInfo.side === "left" ? "left-8" : "right-8"
+          }`}
+        >
+          <div className="animate-[doubletap-ripple_650ms_ease-out_forwards] flex flex-col items-center gap-1">
+            <div className="rounded-full bg-white/20 p-6">
+              {doubleTapInfo.side === "left" ? (
+                <Rewind size={28} weight="fill" className="text-white" />
+              ) : (
+                <FastForward size={28} weight="fill" className="text-white" />
+              )}
+            </div>
+            <span className="text-xs font-semibold text-white drop-shadow">
+              {doubleTapInfo.side === "left" ? "-10s" : "+10s"}
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   );
+}
+
+function encodePayload(payload: {
+  url: string;
+  type: string;
+  headers: Record<string, string>;
+  debugSessionId?: string;
+}) {
+  const json = JSON.stringify(payload);
+  const bytes = new TextEncoder().encode(json);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
 function formatCaptionLabel(language: string) {

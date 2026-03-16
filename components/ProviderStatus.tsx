@@ -51,7 +51,6 @@ export default function ProviderStatus({
 
   return (
     <div className="absolute inset-0 z-20 overflow-hidden bg-black">
-      {/* Backdrop */}
       {backdropUrl && (
         <div
           className="absolute inset-0 scale-105 bg-cover bg-center blur-sm"
@@ -59,10 +58,8 @@ export default function ProviderStatus({
         />
       )}
 
-      {/* Dark gradient overlay */}
       <div className="absolute inset-0 bg-gradient-to-t from-black via-black/80 to-black/50" />
 
-      {/* Content */}
       <div className="absolute inset-0 flex items-center justify-center px-6">
         <div className="w-full max-w-sm text-center">
           {title && (
@@ -75,12 +72,10 @@ export default function ProviderStatus({
           )}
           {!subtitle && title && <div className="mb-6" />}
 
-          {/* Status */}
           <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-white/40">
             {message}
           </p>
 
-          {/* Progress bar */}
           <div className="mb-5 h-[3px] overflow-hidden rounded-full bg-white/10">
             <div
               className="h-full rounded-full bg-white/70 transition-[width] duration-500 ease-out"
@@ -88,7 +83,6 @@ export default function ProviderStatus({
             />
           </div>
 
-          {/* Provider dots */}
           {sources.length > 0 && (
             <div className="flex flex-wrap justify-center gap-1.5">
               {sources.map((source) => (

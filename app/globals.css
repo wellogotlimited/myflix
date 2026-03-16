@@ -7,7 +7,8 @@
   --color-surface: #1a1a1a;
   --color-surface-hover: #262626;
   --color-accent: #e50914;
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-netflix-sans);
+  --font-serif: var(--font-netflix-sans);
 }
 
 body {
@@ -68,6 +69,17 @@ body {
   border-radius: 4px;
 }
 
+/* Portrait-only lock for mobile */
+.portrait-lock {
+  display: none;
+}
+
+@media screen and (orientation: landscape) and (max-height: 600px) {
+  .portrait-lock {
+    display: flex;
+  }
+}
+
 @keyframes fade-center {
   0% {
     opacity: 0;
@@ -81,4 +93,10 @@ body {
     opacity: 0;
     transform: scale(1.08);
   }
+}
+
+@keyframes doubletap-ripple {
+  0%   { opacity: 0.85; transform: scale(0.7); }
+  50%  { opacity: 0.85; transform: scale(1);   }
+  100% { opacity: 0;    transform: scale(1.2); }
 }

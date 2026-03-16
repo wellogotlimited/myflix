@@ -9,10 +9,16 @@ import {
   useState,
 } from "react";
 import { useRouter } from "next/navigation";
+import {
+  createDebugSessionId,
+  enableNetworkDebugCapture,
+  resetNetworkDebug,
+} from "@/lib/network-debug-client";
 import { useProfileSession } from "@/lib/profile-session";
 import type { TMDBEpisode, TMDBSeason } from "@/lib/tmdb";
 import VideoPlayer from "./player/VideoPlayer";
 import ProviderStatus, { SourceStatus } from "./ProviderStatus";
+import WatchErrorState from "./WatchErrorState";
 
 interface MediaInfo {
   type: "movie" | "show";
@@ -67,19 +73,34 @@ export default function WatchClient({
 }) {
   const router = useRouter();
   const { profileId } = useProfileSession();
+  const [devMode] = useState(() =>
+    typeof window !== "undefined" && localStorage.getItem("myflix-dev-mode") === "true"
+  );
   const [stream, setStream] = useState<StreamResult | null>(null);
   const [sources, setSources] = useState<SourceStatus[]>([]);
   const [error, setError] = useState<string | null>(null);
   const requestIdRef = useRef(0);
+  const debugSessionIdRef = useRef<string | null>(null);
   const [activeMedia, setActiveMedia] = useState(media);
   const [activeShowNavigation, setActiveShowNavigation] = useState(showNavigation);
   const [resumePosition, setResumePosition] = useState<number | undefined>(undefined);
   const lastSaveRef = useRef(0);
 
+  if (devMode && !debugSessionIdRef.current) {
+    debugSessionIdRef.current = createDebugSessionId();
+  }
+
   useEffect(() => {
     setActiveMedia(media);
     setActiveShowNavigation(showNavigation);
   }, [media, showNavigation]);
+
+  useEffect(() => {
+    if (!devMode || !debugSessionIdRef.current) return;
+
+    void resetNetworkDebug(debugSessionIdRef.current);
+    return enableNetworkDebugCapture(debugSessionIdRef.current);
+  }, [devMode]);
 
   const mediaKey = useMemo(
     () =>
@@ -92,6 +113,13 @@ export default function WatchClient({
   const activeTitle = useMemo(
     () => (activeMedia.type === "movie" ? title : activeMedia.title),
     [activeMedia, title]
+  );
+  const activeSubtitle = useMemo(
+    () =>
+      activeMedia.type === "show" && activeMedia.season && activeMedia.episode
+        ? `S${activeMedia.season.number} / E${activeMedia.episode.number}${activeMedia.episode.title ? ` - ${activeMedia.episode.title}` : ""}`
+        : undefined,
+    [activeMedia]
   );
   const scrape = useCallback(async (requestId: number, signal?: AbortSignal) => {
     setError(null);
@@ -164,6 +192,21 @@ export default function WatchClient({
       setError(err instanceof Error ? err.message : "Scraping failed");
     }
   }, [activeMedia]);
+
+  const startScrape = useCallback(() => {
+    const nextRequestId = requestIdRef.current + 1;
+    requestIdRef.current = nextRequestId;
+    void scrape(nextRequestId);
+  }, [scrape]);
+
+  const handleExitWatch = useCallback(() => {
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      router.back();
+      return;
+    }
+
+    router.push("/");
+  }, [router]);
 
   const handleEpisodeSelect = useCallback(
     ({
@@ -275,7 +318,6 @@ export default function WatchClient({
     }
   }
 
-  // Fetch resume position when media changes
   useEffect(() => {
     if (!profileId) return;
     setResumePosition(undefined);
@@ -298,7 +340,6 @@ export default function WatchClient({
       .catch(() => {});
   }, [mediaKey, profileId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Save progress every 15 seconds
   const handleProgressUpdate = useCallback(
     (currentTime: number, duration: number) => {
       if (!profileId) return;
@@ -327,7 +368,6 @@ export default function WatchClient({
     [activeMedia, profileId]
   );
 
-  // Save final position on unmount
   useEffect(() => {
     return () => {
       if (!profileId) return;
@@ -352,7 +392,7 @@ export default function WatchClient({
         new Blob([body], { type: "application/json" })
       );
     };
-  }, [activeMedia, profileId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeMedia, profileId]);
 
   useEffect(() => {
     const nextRequestId = requestIdRef.current + 1;
@@ -373,25 +413,24 @@ export default function WatchClient({
           stream={stream}
           onError={setError}
           title={activeTitle}
+          debugSessionId={debugSessionIdRef.current ?? undefined}
           showNavigation={activeShowNavigation}
           onEpisodeSelect={handleEpisodeSelect}
           initialPosition={resumePosition}
           onProgressUpdate={handleProgressUpdate}
         />
       ) : error ? (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black">
-          <p className="mb-4 text-lg text-red-400">{error}</p>
-          <button
-            onClick={() => {
-              const nextRequestId = requestIdRef.current + 1;
-              requestIdRef.current = nextRequestId;
-              scrape(nextRequestId);
-            }}
-            className="rounded bg-white px-6 py-2 font-medium text-black transition-colors hover:bg-gray-200"
-          >
-            Retry
-          </button>
-        </div>
+        <WatchErrorState
+          error={error}
+          title={activeTitle}
+          subtitle={activeSubtitle}
+          backdropPath={activeMedia.backdropPath}
+          posterPath={activeMedia.posterPath}
+          sources={sources}
+          onRetry={startScrape}
+          onBack={handleExitWatch}
+          onHome={() => router.push("/")}
+        />
       ) : (
         <ProviderStatus
           sources={sources}

@@ -5,10 +5,12 @@ export default function MediaRow({
   id,
   title,
   items,
+  portrait = false,
 }: {
   id?: string;
   title: string;
   items: TMDBItem[];
+  portrait?: boolean;
 }) {
   if (!items.length) return null;
 
@@ -19,7 +21,7 @@ export default function MediaRow({
       </h2>
       <div className="-my-6 flex gap-2.5 overflow-x-auto overflow-y-visible px-4 py-6 scrollbar-hide md:px-8">
         {items.map((item) => (
-          <MediaCard key={item.id} item={item} />
+          <MediaCard key={item.id} item={item} portrait={portrait} />
         ))}
       </div>
     </section>

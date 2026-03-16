@@ -48,9 +48,11 @@ export default function ProgressBar({
     (e: React.MouseEvent) => {
       setDragging(true);
       onSeek(getTimeFromX(e.clientX));
+      updateHover(e.clientX);
 
       const handleMouseMove = (ev: MouseEvent) => {
         onSeek(getTimeFromX(ev.clientX));
+        updateHover(ev.clientX);
       };
       const handleMouseUp = () => {
         setDragging(false);
@@ -60,12 +62,41 @@ export default function ProgressBar({
       window.addEventListener("mousemove", handleMouseMove);
       window.addEventListener("mouseup", handleMouseUp);
     },
-    [getTimeFromX, onSeek]
+    [getTimeFromX, onSeek, updateHover]
+  );
+
+  const handleTouchStart = useCallback(
+    (e: React.TouchEvent) => {
+      const touch = e.touches[0];
+      if (!touch) return;
+
+      setDragging(true);
+      onSeek(getTimeFromX(touch.clientX));
+      updateHover(touch.clientX);
+
+      const handleTouchMove = (ev: TouchEvent) => {
+        const nextTouch = ev.touches[0];
+        if (!nextTouch) return;
+        onSeek(getTimeFromX(nextTouch.clientX));
+        updateHover(nextTouch.clientX);
+      };
+      const handleTouchEnd = () => {
+        setDragging(false);
+        window.removeEventListener("touchmove", handleTouchMove);
+        window.removeEventListener("touchend", handleTouchEnd);
+        window.removeEventListener("touchcancel", handleTouchEnd);
+      };
+
+      window.addEventListener("touchmove", handleTouchMove, { passive: true });
+      window.addEventListener("touchend", handleTouchEnd);
+      window.addEventListener("touchcancel", handleTouchEnd);
+    },
+    [getTimeFromX, onSeek, updateHover]
   );
 
   return (
     <div
-      className="group/progress w-full cursor-pointer px-0.5 py-2"
+      className="group/progress w-full cursor-pointer touch-none px-0.5 py-2"
       onMouseEnter={() => setHovering(true)}
       onMouseLeave={() => {
         setHovering(false);
@@ -87,6 +118,7 @@ export default function ProgressBar({
         ref={barRef}
         className="relative h-1.5 w-full overflow-hidden rounded-full bg-white/20 transition-all group-hover/progress:h-2"
         onMouseDown={handleMouseDown}
+        onTouchStart={handleTouchStart}
       >
         {/* Buffered */}
         <div

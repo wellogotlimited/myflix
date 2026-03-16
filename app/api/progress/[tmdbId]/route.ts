@@ -40,13 +40,20 @@ export async function GET(
     : null;
 
   await connectToDatabase();
-  const item = await WatchProgressModel.findOne({
+  const query = {
     profileId: profile.profileId,
     tmdbId: Number(tmdbId),
     ...(mediaType === "movie" || mediaType === "tv" ? { mediaType } : {}),
     ...(seasonNumber !== null ? { seasonNumber } : {}),
     ...(episodeNumber !== null ? { episodeNumber } : {}),
-  }).lean();
+  };
+
+  const item =
+    seasonNumber !== null || episodeNumber !== null
+      ? await WatchProgressModel.findOne(query).lean()
+      : await WatchProgressModel.findOne(query)
+          .sort({ updatedAt: -1, seasonNumber: -1, episodeNumber: -1 })
+          .lean();
 
   if (!item) return NextResponse.json(null);
   return NextResponse.json(serializeDocument(item));

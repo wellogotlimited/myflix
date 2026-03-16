@@ -2,35 +2,24 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useSession } from "next-auth/react";
-import { AVATAR_PRESETS } from "@/lib/avatars";
+import { AVATAR_PRESETS, type AvatarId } from "@/lib/avatars";
 
-interface ProfileData {
-  _id: string;
-  name: string;
-  avatarId: string;
-  maturityLevel: string;
-  isKidsProfile: boolean;
-}
-
-export default function EditProfileForm({ profile }: { profile: ProfileData }) {
+export default function CreateProfileForm() {
   const router = useRouter();
-  const { data: session, update } = useSession();
-  const [name, setName] = useState(profile.name);
-  const [avatarId, setAvatarId] = useState(profile.avatarId);
-  const [maturityLevel, setMaturityLevel] = useState(profile.maturityLevel);
-  const [isKidsProfile, setIsKidsProfile] = useState(profile.isKidsProfile);
+  const [name, setName] = useState("");
+  const [avatarId, setAvatarId] = useState<AvatarId>(AVATAR_PRESETS[0].id);
+  const [maturityLevel, setMaturityLevel] = useState<"KIDS" | "TEEN" | "ADULT">("ADULT");
+  const [isKidsProfile, setIsKidsProfile] = useState(false);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState(false);
 
-  async function handleSave(e: React.FormEvent) {
+  async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
     setError("");
 
-    const res = await fetch(`/api/profile/${profile._id}`, {
-      method: "PATCH",
+    const res = await fetch("/api/profile", {
+      method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, avatarId, maturityLevel, isKidsProfile }),
     });
@@ -39,43 +28,23 @@ export default function EditProfileForm({ profile }: { profile: ProfileData }) {
 
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      setError(data.error ?? "Failed to save.");
-      return;
-    }
-
-    if (session?.user?.profileId === profile._id) {
-      await update({ profileId: profile._id });
-    }
-
-    router.push("/profiles/manage");
-  }
-
-  async function handleDelete() {
-    if (!confirm(`Delete profile "${profile.name}"? This cannot be undone.`)) return;
-    setDeleting(true);
-
-    const res = await fetch(`/api/profile/${profile._id}`, { method: "DELETE" });
-    setDeleting(false);
-
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      setError(data.error ?? "Failed to delete.");
+      setError(data.error ?? "Failed to create profile.");
       return;
     }
 
     router.push("/profiles/manage");
+    router.refresh();
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-[#141414] px-6 py-16">
-      <h1 className="mb-10 text-4xl font-medium tracking-wide text-white">Edit Profile</h1>
+    <div className="flex min-h-screen flex-col items-center justify-center bg-[#141414] px-6 py-16">
+      <h1 className="mb-10 text-4xl font-medium tracking-wide text-white">Add Profile</h1>
 
-      <form onSubmit={handleSave} className="w-full max-w-md space-y-6">
-        {error && (
+      <form onSubmit={handleCreate} className="w-full max-w-md space-y-6">
+        {error ? (
           <p className="rounded bg-orange-600/20 px-4 py-3 text-sm text-orange-300">{error}</p>
-        )}
+        ) : null}
 
-        {/* Avatar picker */}
         <div>
           <p className="mb-3 text-sm font-medium text-gray-300">Avatar</p>
           <div className="flex flex-wrap gap-3">
@@ -86,7 +55,7 @@ export default function EditProfileForm({ profile }: { profile: ProfileData }) {
                   key={preset.id}
                   type="button"
                   onClick={() => setAvatarId(preset.id)}
-                  className={`flex h-12 w-12 items-center justify-center rounded-md font-bold text-white text-lg transition ${
+                  className={`flex h-12 w-12 items-center justify-center rounded-md text-lg font-bold text-white transition ${
                     avatarId === preset.id
                       ? "ring-2 ring-white ring-offset-2 ring-offset-[#141414]"
                       : "opacity-60 hover:opacity-100"
@@ -100,7 +69,6 @@ export default function EditProfileForm({ profile }: { profile: ProfileData }) {
           </div>
         </div>
 
-        {/* Name */}
         <div>
           <label className="mb-1 block text-sm font-medium text-gray-300">Name</label>
           <input
@@ -113,7 +81,6 @@ export default function EditProfileForm({ profile }: { profile: ProfileData }) {
           />
         </div>
 
-        {/* Maturity level */}
         <div>
           <p className="mb-3 text-sm font-medium text-gray-300">Maturity Rating</p>
           <div className="flex gap-3">
@@ -123,8 +90,7 @@ export default function EditProfileForm({ profile }: { profile: ProfileData }) {
                 type="button"
                 onClick={() => {
                   setMaturityLevel(level);
-                  if (level === "KIDS") setIsKidsProfile(true);
-                  else setIsKidsProfile(false);
+                  setIsKidsProfile(level === "KIDS");
                 }}
                 className={`flex-1 rounded border py-2 text-sm font-medium transition ${
                   maturityLevel === level
@@ -149,7 +115,7 @@ export default function EditProfileForm({ profile }: { profile: ProfileData }) {
             disabled={saving}
             className="flex-1 rounded bg-white py-3 font-semibold text-black transition hover:bg-gray-200 disabled:opacity-60"
           >
-            {saving ? "Saving…" : "Save"}
+            {saving ? "Creating..." : "Create Profile"}
           </button>
           <button
             type="button"
@@ -159,15 +125,6 @@ export default function EditProfileForm({ profile }: { profile: ProfileData }) {
             Cancel
           </button>
         </div>
-
-        <button
-          type="button"
-          onClick={handleDelete}
-          disabled={deleting}
-          className="w-full rounded border border-red-800 py-3 text-sm text-red-500 transition hover:border-red-500 hover:text-red-400 disabled:opacity-60"
-        >
-          {deleting ? "Deleting…" : "Delete Profile"}
-        </button>
       </form>
     </div>
   );

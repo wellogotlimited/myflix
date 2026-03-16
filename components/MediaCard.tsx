@@ -7,7 +7,10 @@ import { createPortal } from "react-dom";
 import { BookmarkSimple, CaretRight, Play } from "@phosphor-icons/react";
 import MediaDetailsModal from "./MediaDetailsModal";
 import { useMyList } from "@/lib/my-list";
-import { TMDBItem, backdropUrl, getMediaType } from "@/lib/tmdb";
+import { useResumeProgress } from "@/lib/use-resume-progress";
+import { TMDBItem, backdropUrl, posterUrl, getMediaType } from "@/lib/tmdb";
+
+type MediaCardLayout = "rail" | "grid";
 
 function formatRuntime(minutes: number | null | undefined) {
   if (!minutes) return null;
@@ -18,7 +21,15 @@ function formatRuntime(minutes: number | null | undefined) {
   return `${hours}h ${mins}m`;
 }
 
-export default function MediaCard({ item }: { item: TMDBItem }) {
+export default function MediaCard({
+  item,
+  layout = "rail",
+  portrait = false,
+}: {
+  item: TMDBItem;
+  layout?: MediaCardLayout;
+  portrait?: boolean;
+}) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [previewRect, setPreviewRect] = useState<{
@@ -30,11 +41,16 @@ export default function MediaCard({ item }: { item: TMDBItem }) {
   const cardRef = useRef<HTMLDivElement>(null);
 
   const type = getMediaType(item);
-  const cardImage = backdropUrl(
-    item.logo_backdrop_path || item.backdrop_path,
-    "w780"
-  );
+  const cardImage = portrait
+    ? posterUrl(item.poster_path, "w342")
+    : backdropUrl(item.logo_backdrop_path || item.backdrop_path, "w780");
+  const isGrid = layout === "grid";
   const { isSaved, toggle } = useMyList(item);
+  const resumeProgress = useResumeProgress(item, previewOpen);
+  const previewWatchHref =
+    type === "tv" && resumeProgress?.seasonNumber && resumeProgress?.episodeNumber
+      ? `/watch/${type}/${item.id}?season=${resumeProgress.seasonNumber}&episode=${resumeProgress.episodeNumber}`
+      : `/watch/${type}/${item.id}`;
 
   useEffect(() => {
     return () => {
@@ -95,6 +111,41 @@ export default function MediaCard({ item }: { item: TMDBItem }) {
 
   if (!cardImage) return null;
 
+  if (portrait) {
+    const portraitSizes = isGrid
+      ? "(max-width: 379px) 44vw, (max-width: 767px) 29vw, 220px"
+      : "112px";
+
+    return (
+      <>
+        <button
+          type="button"
+          onClick={() => setModalOpen(true)}
+          className={`overflow-hidden rounded-md shadow-[0_10px_24px_rgba(0,0,0,0.2)] ${
+            isGrid ? "w-full min-w-0" : "w-28 flex-shrink-0"
+          }`}
+        >
+          <div className="relative aspect-[2/3]">
+            <Image
+              src={cardImage}
+              alt=""
+              fill
+              sizes={portraitSizes}
+              className="object-cover"
+            />
+          </div>
+        </button>
+        {modalOpen ? (
+          <MediaDetailsModal
+            item={item}
+            open={modalOpen}
+            onClose={() => setModalOpen(false)}
+          />
+        ) : null}
+      </>
+    );
+  }
+
   const metaLabel =
     type === "movie"
       ? formatRuntime(item.runtime)
@@ -106,7 +157,7 @@ export default function MediaCard({ item }: { item: TMDBItem }) {
     <>
       <div
         ref={cardRef}
-        className="relative flex-shrink-0"
+        className={`relative ${isGrid ? "w-full min-w-0" : "flex-shrink-0"}`}
         onMouseEnter={openPreview}
         onMouseLeave={scheduleClosePreview}
       >
@@ -116,14 +167,16 @@ export default function MediaCard({ item }: { item: TMDBItem }) {
             closePreviewNow();
             setModalOpen(true);
           }}
-          className="group relative block w-[280px] overflow-hidden rounded-lg shadow-[0_10px_24px_rgba(0,0,0,0.2)]"
+          className={`group relative block overflow-hidden rounded-lg shadow-[0_10px_24px_rgba(0,0,0,0.2)] ${
+            isGrid ? "w-full" : "w-[280px]"
+          }`}
         >
           <div className="relative aspect-video">
             <Image
               src={cardImage}
               alt=""
               fill
-              sizes="280px"
+              sizes={isGrid ? "(max-width: 640px) 100vw, (max-width: 768px) 50vw, (max-width: 1024px) 33vw, (max-width: 1280px) 25vw, 20vw" : "280px"}
               className="object-cover transition-transform duration-300 group-hover:scale-105"
             />
           </div>
@@ -164,8 +217,9 @@ export default function MediaCard({ item }: { item: TMDBItem }) {
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <Link
-                    href={`/watch/${type}/${item.id}`}
+                    href={previewWatchHref}
                     className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white text-black transition hover:bg-white/92"
+                    title="Resume playback"
                   >
                     <Play size={16} weight="fill" />
                   </Link>
