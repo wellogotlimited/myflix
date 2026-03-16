@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type TouchEvent } from "react";
 import { useRouter } from "next/navigation";
 import {
   CaretLeft,
@@ -37,6 +37,7 @@ interface MobileControlsProps {
   captions: CaptionTrack[];
   activeCaptionIdx: number;
   subtitleDelay: number;
+  onTouchInteractionStart: () => void;
   onPlayPause: () => void;
   onSeek: (time: number) => void;
   onLock: () => void;
@@ -62,6 +63,7 @@ export default function MobileControls({
   captions,
   activeCaptionIdx,
   subtitleDelay,
+  onTouchInteractionStart,
   onPlayPause,
   onSeek,
   onLock,
@@ -105,6 +107,15 @@ export default function MobileControls({
     };
   }
 
+  function withTouchStartAction(handler: () => void) {
+    return (e: TouchEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      onTouchInteractionStart();
+      handler();
+    };
+  }
+
   function handleBack() {
     if (window.history.length > 1) {
       router.back();
@@ -115,10 +126,15 @@ export default function MobileControls({
   }
 
   return (
-    <div data-player-ui className="pointer-events-auto absolute inset-0 z-20">
+    <div
+      data-player-ui
+      className="pointer-events-auto absolute inset-0 z-20"
+      onTouchStartCapture={onTouchInteractionStart}
+      onPointerDownCapture={onTouchInteractionStart}
+    >
       <div
         data-player-ui
-        className="absolute left-0 right-0 top-0 bg-gradient-to-b from-black/85 via-black/35 to-transparent px-3 pb-16 pt-[max(env(safe-area-inset-top),0.9rem)]"
+        className="absolute left-0 right-0 top-0 z-10 bg-gradient-to-b from-black/85 via-black/35 to-transparent px-3 pb-16 pt-[max(env(safe-area-inset-top),0.9rem)]"
         onClick={stopEvent}
         onTouchEnd={stopEvent}
       >
@@ -126,6 +142,7 @@ export default function MobileControls({
           <button
             type="button"
             onClick={withStop(handleBack)}
+            onTouchStart={withTouchStartAction(handleBack)}
             onTouchEnd={stopEvent}
             className={`${touchButtonClass} flex-shrink-0`}
             aria-label="Go back"
@@ -138,6 +155,7 @@ export default function MobileControls({
           <button
             type="button"
             onClick={withStop(onLock)}
+            onTouchStart={withTouchStartAction(onLock)}
             onTouchEnd={stopEvent}
             className={`${touchButtonClass} flex-shrink-0`}
             aria-label="Lock controls"
@@ -186,7 +204,7 @@ export default function MobileControls({
 
       <div
         data-player-ui
-        className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/95 via-black/55 to-transparent px-3 pb-[max(env(safe-area-inset-bottom),1rem)] pt-16"
+        className="absolute bottom-0 left-0 right-0 z-10 bg-gradient-to-t from-black/95 via-black/55 to-transparent px-3 pb-[max(env(safe-area-inset-bottom),1rem)] pt-16"
         onClick={stopEvent}
         onTouchEnd={stopEvent}
       >

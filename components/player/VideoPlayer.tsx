@@ -172,6 +172,7 @@ export default function VideoPlayer({
   const centerIndicatorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTapRef = useRef<{ time: number; x: number } | null>(null);
   const lastTouchTimeRef = useRef(0);
+  const consumeNextContainerTouchRef = useRef(false);
 
   const streamKey = useMemo(
     () => JSON.stringify([stream.type, stream.playlist, stream.qualities, stream.captions]),
@@ -977,6 +978,11 @@ export default function VideoPlayer({
 
   const handleContainerTouchEnd = useCallback(
     (e: React.TouchEvent<HTMLDivElement>) => {
+      if (consumeNextContainerTouchRef.current) {
+        consumeNextContainerTouchRef.current = false;
+        return;
+      }
+
       lastTouchTimeRef.current = Date.now();
 
       if (locked) return;
@@ -1021,6 +1027,10 @@ export default function VideoPlayer({
     },
     [locked, showControls, resetIdleTimer]
   );
+
+  const markControlsTouchInteraction = useCallback(() => {
+    consumeNextContainerTouchRef.current = true;
+  }, []);
 
   return (
     <div
@@ -1235,6 +1245,7 @@ export default function VideoPlayer({
           captions={captions}
           activeCaptionIdx={activeCaptionIdx}
           subtitleDelay={subtitleDelay}
+          onTouchInteractionStart={markControlsTouchInteraction}
           onPlayPause={handlePlayPause}
           onSeek={handleSeek}
           onLock={() => { setLocked(true); setShowControls(false); }}
