@@ -13,23 +13,18 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Missing params" }, { status: 400 });
   }
 
-  const tidbKey = process.env.TIDB_API_KEY;
-  const headers: HeadersInit = tidbKey
-    ? { Authorization: `Bearer ${tidbKey}` }
-    : {};
-
   // Primary: TheIntroDB
   try {
     const url = `${TIDB_BASE}/media?tmdb_id=${tmdbId}&season=${season}&episode=${episode}`;
-    const res = await fetch(url, { headers, next: { revalidate: 3600 } });
+    const res = await fetch(url, { next: { revalidate: 3600 } });
 
     if (res.ok) {
       const data = await res.json();
       return NextResponse.json(data);
     }
 
-    // 404 = no data for this episode, fall through to fallback
-    if (res.status !== 404) {
+    // 404 or 403 = fall through to fallback
+    if (res.status !== 404 && res.status !== 403) {
       return NextResponse.json({}, { status: res.status });
     }
   } catch {

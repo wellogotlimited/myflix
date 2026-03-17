@@ -96,7 +96,7 @@ export default function ProgressBar({
 
   return (
     <div
-      className="group/progress w-full cursor-pointer touch-none px-0.5 py-2"
+      className="group/progress w-full cursor-pointer touch-none py-2"
       onMouseEnter={() => setHovering(true)}
       onMouseLeave={() => {
         setHovering(false);
@@ -116,25 +116,25 @@ export default function ProgressBar({
       {/* Bar */}
       <div
         ref={barRef}
-        className="relative h-1.5 w-full overflow-hidden rounded-full bg-white/20 transition-all group-hover/progress:h-2"
+        className="relative h-1.5 w-full overflow-hidden bg-white/20 transition-all group-hover/progress:h-2"
         onMouseDown={handleMouseDown}
         onTouchStart={handleTouchStart}
       >
         {/* Buffered */}
         <div
-          className="absolute inset-y-0 left-0 bg-white/30 rounded-full"
+          className="absolute inset-y-0 left-0 bg-white/30"
           style={{ width: `${bufferedPct}%` }}
         />
         {/* Hover preview */}
         {hovering && (
           <div
-            className="absolute inset-y-0 left-0 bg-white/20 rounded-full"
+            className="absolute inset-y-0 left-0 bg-white/20"
             style={{ width: `${Math.max(0, Math.min(100, hoverPct))}%` }}
           />
         )}
         {/* Progress */}
         <div
-          className="absolute inset-y-0 left-0 rounded-full bg-red-500"
+          className="absolute inset-y-0 left-0 bg-red-500"
           style={{ width: `${progress}%` }}
         />
       </div>

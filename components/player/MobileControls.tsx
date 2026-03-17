@@ -291,7 +291,7 @@ export default function MobileControls({
       {settingsOpen && (
         <div
           data-player-ui
-          className="absolute inset-x-3 bottom-[calc(max(env(safe-area-inset-bottom),1rem)+5.75rem)] z-40 overflow-hidden rounded-3xl border border-white/10 bg-[#101010]/95 shadow-[0_28px_80px_rgba(0,0,0,0.45)] backdrop-blur-xl"
+          className="absolute bottom-[calc(max(env(safe-area-inset-bottom),1rem)+5.75rem)] right-3 z-40 w-72 max-h-[min(24rem,60vh)] overflow-hidden rounded-3xl border border-white/10 bg-[#101010]/95 shadow-[0_28px_80px_rgba(0,0,0,0.45)] backdrop-blur-xl flex flex-col"
           onClick={stopEvent}
           onTouchEnd={stopEvent}
         >
@@ -320,7 +320,7 @@ export default function MobileControls({
           </div>
 
           {settingsView === "main" && (
-            <div className="p-2">
+            <div className="overflow-y-auto p-2">
               <MobileSettingsRow
                 label="Quality"
                 value={qualityLabel}
@@ -380,7 +380,7 @@ export default function MobileControls({
           )}
 
           {settingsView === "captions" && (
-            <div className="space-y-3 p-3">
+            <div className="space-y-3 overflow-y-auto p-3">
               <div className="rounded-2xl bg-white/5 p-1">
                 <MobileOptionRow
                   active={activeCaptionIdx < 0}
@@ -408,36 +408,6 @@ export default function MobileControls({
                 )}
               </div>
 
-              <div className="rounded-2xl bg-white/5 px-4 py-3">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-medium text-white">Subtitle delay</p>
-                    <p className="text-xs text-white/45">
-                      {subtitleDelay > 0 ? "+" : ""}
-                      {subtitleDelay.toFixed(1)}s
-                    </p>
-                  </div>
-                  <ClosedCaptioning size={20} className="text-white/60" />
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={withStop(() => onSubtitleDelayChange(-0.5))}
-                    onTouchEnd={stopEvent}
-                    className="flex-1 rounded-2xl bg-white/8 px-4 py-3 text-sm font-semibold text-white"
-                  >
-                    -0.5s
-                  </button>
-                  <button
-                    type="button"
-                    onClick={withStop(() => onSubtitleDelayChange(0.5))}
-                    onTouchEnd={stopEvent}
-                    className="flex-1 rounded-2xl bg-white/8 px-4 py-3 text-sm font-semibold text-white"
-                  >
-                    +0.5s
-                  </button>
-                </div>
-              </div>
             </div>
           )}
         </div>
@@ -488,7 +458,6 @@ function MobileOptionRow({
       }`}
     >
       <span>{label}</span>
-      {active && <span className="text-xs uppercase tracking-[0.24em] text-rose-300/70">On</span>}
     </button>
   );
 }

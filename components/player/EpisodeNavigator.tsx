@@ -126,7 +126,7 @@ export default function EpisodeNavigator({
       <div
         className={`pointer-events-none absolute inset-x-4 bottom-24 z-30 md:bottom-28 ${
           view === "episodes"
-            ? "md:left-6 md:right-6"
+            ? "md:left-auto md:right-6 md:max-w-3xl"
             : "md:left-auto md:right-6 md:w-[24rem]"
         }`}
       >
@@ -206,7 +206,7 @@ export default function EpisodeNavigator({
                     return (
                       <div
                         key={episode.id}
-                        className={`w-[18rem] flex-shrink-0 overflow-hidden rounded-[20px] border border-white/8 bg-white/[0.03] transition ${
+                        className={`w-56 flex-shrink-0 overflow-hidden rounded-[20px] border border-white/8 bg-white/[0.03] transition ${
                           isActive
                             ? "ring-1 ring-rose-400/40"
                             : "hover:-translate-y-0.5"
@@ -236,7 +236,7 @@ export default function EpisodeNavigator({
                                   src={backdropUrl(episode.still_path, "w300")}
                                   alt={episode.name}
                                   fill
-                                  sizes="288px"
+                                  sizes="224px"
                                   className="object-cover transition duration-300"
                                 />
                               ) : (

@@ -176,11 +176,11 @@ export default function Controls(props: ControlsProps) {
 
               <div
                 className={`overflow-hidden transition-all duration-200 ${
-                  volumeHover ? "ml-2 w-28 opacity-100" : "w-0 opacity-0"
+                  volumeHover ? "ml-2 w-32 opacity-100" : "w-0 opacity-0"
                 }`}
               >
                 <div
-                  className="relative h-1.5 cursor-pointer rounded-full bg-white/30"
+                  className="relative mr-2 h-1.5 cursor-pointer rounded-full bg-white/30"
                   onClick={handleVolumeBarClick}
                 >
                   <div
@@ -216,17 +216,10 @@ export default function Controls(props: ControlsProps) {
               </span>
             )}
 
-            {subtitleDelay !== 0 && (
-              <span className="mr-1 rounded-full bg-white/10 px-2.5 py-1 text-xs font-medium text-white">
-                {subtitleDelay > 0 ? "+" : ""}
-                {subtitleDelay.toFixed(1)}s
-              </span>
-            )}
-
             {hasEpisodeSelector && onEpisodeSelectorToggle && (
               <button
                 onClick={onEpisodeSelectorToggle}
-                className={`flex items-center gap-2 rounded-full px-3 py-2 text-sm font-medium transition-colors ${
+                className={`rounded-full p-2 transition-colors ${
                   isEpisodeSelectorOpen
                     ? "bg-red-500/20 text-rose-300 hover:bg-red-500/25"
                     : "text-white hover:bg-white/10 hover:text-white"
@@ -234,7 +227,6 @@ export default function Controls(props: ControlsProps) {
                 title="Seasons and episodes (N)"
               >
                 <Queue size={28} weight={isEpisodeSelectorOpen ? "fill" : "regular"} />
-                <span className="font-sans">Episodes</span>
               </button>
             )}
 
@@ -454,28 +446,6 @@ function SettingsPanel({
             <CaretLeft size={16} weight="bold" />
             Captions
           </button>
-          <div className="border-t border-white/10" />
-
-          <div className="flex items-center justify-between px-4 py-3">
-            <span className="text-xs text-white/60">Delay</span>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => onSubtitleDelayChange(-0.5)}
-                className="rounded bg-white/10 px-2 py-0.5 text-xs text-white hover:bg-white/20"
-              >
-                -0.5s
-              </button>
-              <span className="w-12 text-center font-mono text-xs text-white">
-                {subtitleDelay.toFixed(1)}s
-              </span>
-              <button
-                onClick={() => onSubtitleDelayChange(0.5)}
-                className="rounded bg-white/10 px-2 py-0.5 text-xs text-white hover:bg-white/20"
-              >
-                +0.5s
-              </button>
-            </div>
-          </div>
           <div className="border-t border-white/10" />
 
           <div className="player-subtitles-scroll max-h-[18rem] overflow-y-auto">
