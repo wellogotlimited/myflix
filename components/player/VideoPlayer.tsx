@@ -330,8 +330,8 @@ export default function VideoPlayer({
               },
               timeoutRetry: {
                 maxNumRetry: 10,
-                maxRetryDelayMs: 0,
-                retryDelayMs: 0,
+                retryDelayMs: 1000,
+                maxRetryDelayMs: 8000,
               },
             },
           },
@@ -365,9 +365,21 @@ export default function VideoPlayer({
           video.play().catch((e) => dbg(`play() rejected: ${e}`));
         });
 
+        let mediaRecoveryAttempts = 0;
         hls.on(Hls.Events.ERROR, (_event, data) => {
           dbg(`hls error fatal=${data.fatal} type=${data.type} details=${data.details}`);
           if (data.fatal) {
+            if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+              dbg("fatal network error — calling startLoad() to recover");
+              hls.startLoad();
+              return;
+            }
+            if (data.type === Hls.ErrorTypes.MEDIA_ERROR && mediaRecoveryAttempts < 2) {
+              mediaRecoveryAttempts += 1;
+              dbg(`fatal media error — calling recoverMediaError() (attempt ${mediaRecoveryAttempts})`);
+              hls.recoverMediaError();
+              return;
+            }
             onError?.(`Playback error: ${data.type}`);
           }
         });

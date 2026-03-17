@@ -50,11 +50,37 @@ export default function Player({
               }
             }
           },
+          fragLoadPolicy: {
+            default: {
+              maxLoadTimeMs: 30 * 1000,
+              maxTimeToFirstByteMs: 30 * 1000,
+              errorRetry: {
+                maxNumRetry: 10,
+                retryDelayMs: 1000,
+                maxRetryDelayMs: 10000,
+              },
+              timeoutRetry: {
+                maxNumRetry: 10,
+                retryDelayMs: 1000,
+                maxRetryDelayMs: 8000,
+              },
+            },
+          },
         });
         hlsRef.current = hls;
 
+        let mediaRecoveryAttempts = 0;
         hls.on(Hls.Events.ERROR, (_event, data) => {
           if (data.fatal) {
+            if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+              hls.startLoad();
+              return;
+            }
+            if (data.type === Hls.ErrorTypes.MEDIA_ERROR && mediaRecoveryAttempts < 2) {
+              mediaRecoveryAttempts += 1;
+              hls.recoverMediaError();
+              return;
+            }
             onError?.(`HLS error: ${data.type}`);
           }
         });
