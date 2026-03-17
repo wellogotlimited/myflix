@@ -315,10 +315,26 @@ export default function VideoPlayer({
         setManifestUrl(hlsSource);
 
         const hls = new Hls({
-          maxBufferLength: 30,
-          maxMaxBufferLength: 60,
-          fragLoadingMaxRetry: 6,
-          fragLoadingRetryDelay: 1500,
+          autoStartLoad: true,
+          maxBufferLength: 120, // 120 seconds
+          maxMaxBufferLength: 240,
+          abrEwmaDefaultEstimate: 5 * 1000 * 1000, // 5 Mbps default bandwidth estimate for better ABR decisions
+          fragLoadPolicy: {
+            default: {
+              maxLoadTimeMs: 30 * 1000, // allow it load extra long, fragments are slow if requested for the first time on an origin
+              maxTimeToFirstByteMs: 30 * 1000,
+              errorRetry: {
+                maxNumRetry: 10,
+                retryDelayMs: 1000,
+                maxRetryDelayMs: 10000,
+              },
+              timeoutRetry: {
+                maxNumRetry: 10,
+                maxRetryDelayMs: 0,
+                retryDelayMs: 0,
+              },
+            },
+          },
           renderTextTracksNatively: false,
         });
         hlsRef.current = hls;
