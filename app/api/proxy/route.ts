@@ -1,6 +1,43 @@
 import { NextRequest, NextResponse } from "next/server";
+import { after } from "next/server";
 import { appendNetworkDebug } from "@/lib/network-debug-server";
 
+// ---------------------------------------------------------------------------
+// LRU cache for immutable segments & encryption keys
+// ---------------------------------------------------------------------------
+type CacheEntry = {
+  body: ArrayBuffer;
+  status: number;
+  headers: Record<string, string>;
+  cachedAt: number;
+};
+
+const SEGMENT_CACHE_MAX = 256;
+const SEGMENT_CACHE_TTL_MS = 5 * 60 * 1000; // 5 min
+const PLAYLIST_CACHE_MAX = 64;
+const PLAYLIST_CACHE_TTL_MS = 4_000; // 4 s — media playlists refresh often
+
+const segmentCache = new Map<string, CacheEntry>();
+const playlistCache = new Map<string, { body: string; headers: Record<string, string>; status: number; cachedAt: number }>();
+
+// Peek-buffer size for HLS detection (avoid buffering entire response)
+const HLS_PEEK_BYTES = 4096;
+
+function evictLru<T>(map: Map<string, T>, max: number) {
+  if (map.size <= max) return;
+  const first = map.keys().next().value;
+  if (first !== undefined) map.delete(first);
+}
+
+function touchCache<T>(map: Map<string, T>, key: string, entry: T) {
+  map.delete(key); // remove so re-insert puts it at the end
+  map.set(key, entry);
+  evictLru(map, map === (segmentCache as unknown as Map<string, T>) ? SEGMENT_CACHE_MAX : PLAYLIST_CACHE_MAX);
+}
+
+// ---------------------------------------------------------------------------
+// Header maps
+// ---------------------------------------------------------------------------
 const HEADER_MAP: Record<string, string> = {
   "x-cookie": "cookie",
   "x-referer": "referer",
@@ -28,6 +65,21 @@ const RESPONSE_HEADER_ALLOWLIST = [
   "last-modified",
 ] as const;
 
+// Patterns for cacheable segment extensions
+const IMMUTABLE_SEGMENT_RE =
+  /\.(ts|m4s|m4v|m4a|aac|mp3|key|jpg|jpeg|png|gif|webp)($|[?#])/i;
+
+function isCacheableSegment(url: string): boolean {
+  return IMMUTABLE_SEGMENT_RE.test(url);
+}
+
+function isHlsUrl(url: string): boolean {
+  return /\.m3u8($|[?#])/i.test(url);
+}
+
+// ---------------------------------------------------------------------------
+// Route handlers
+// ---------------------------------------------------------------------------
 export async function GET(req: NextRequest) {
   return handleProxy(req);
 }
@@ -40,6 +92,9 @@ export async function POST(req: NextRequest) {
   return handleProxy(req);
 }
 
+// ---------------------------------------------------------------------------
+// Main proxy handler
+// ---------------------------------------------------------------------------
 async function handleProxy(req: NextRequest) {
   const payloadParam = req.nextUrl.searchParams.get("payload");
   const payload = decodePayload(payloadParam);
@@ -62,54 +117,125 @@ async function handleProxy(req: NextRequest) {
     const method = req.method === "HEAD" ? "HEAD" : req.method;
     const body = method === "POST" ? await req.text() : undefined;
 
+    const wantsHls = payload?.type === "hls" || isHlsUrl(destination);
+    const cacheable = method === "GET" && isCacheableSegment(destination);
+    const cacheKey = destination;
+
+    // ---- Check segment cache ----
+    if (cacheable) {
+      const cached = segmentCache.get(cacheKey);
+      if (cached && Date.now() - cached.cachedAt < SEGMENT_CACHE_TTL_MS) {
+        touchCache(segmentCache, cacheKey, cached);
+        const resHeaders = new Headers(cached.headers);
+        resHeaders.set("X-Proxy-Cache", "HIT");
+        deferLog(debugSessionId, {
+          sessionId: debugSessionId,
+          method,
+          destination,
+          status: cached.status,
+          durationMs: Date.now() - startedAt,
+          requestHeaders: sanitizeHeaders(headers),
+          note: "segment-cache-hit",
+        });
+        return new NextResponse(cached.body, { status: cached.status, headers: resHeaders });
+      }
+    }
+
+    // ---- Check playlist cache ----
+    if (wantsHls) {
+      const cached = playlistCache.get(cacheKey);
+      if (cached && Date.now() - cached.cachedAt < PLAYLIST_CACHE_TTL_MS) {
+        touchCache(playlistCache, cacheKey, cached);
+        const resHeaders = new Headers(cached.headers);
+        resHeaders.set("X-Proxy-Cache", "HIT");
+        deferLog(debugSessionId, {
+          sessionId: debugSessionId,
+          method,
+          destination,
+          status: cached.status,
+          durationMs: Date.now() - startedAt,
+          requestHeaders: sanitizeHeaders(headers),
+          note: "playlist-cache-hit",
+        });
+        return new NextResponse(cached.body, { status: cached.status, headers: resHeaders });
+      }
+    }
+
+    // ---- Upstream fetch — allow runtime caching for segments ----
     const response = await fetch(destination, {
       method,
       headers,
       body,
       redirect: "follow",
-      cache: "no-store",
+      ...(cacheable ? {} : { cache: "no-store" as const }),
     });
 
-    if (payload?.type === "hls" || shouldRewriteHls(response, destination)) {
-      const buffer = await response.arrayBuffer().catch(() => null);
-      if (buffer !== null) {
-        const text = new TextDecoder("utf-8", { fatal: false }).decode(buffer);
-        if (looksLikeHlsPlaylist(text, response, destination)) {
-          const playlistBaseUrl = response.url || destination;
-          const playlist = rewriteHlsPlaylist(
-            text,
-            playlistBaseUrl,
-            payload?.headers ?? {},
-            payload?.debugSessionId
-          );
-          await logProxyRequest({
-            sessionId: debugSessionId,
-            method,
-            destination,
-            finalUrl: response.url,
-            status: response.status,
-            durationMs: Date.now() - startedAt,
-            requestHeaders: sanitizeHeaders(headers),
-            responseHeaders: pickResponseHeaders(response.headers),
-            contentType: response.headers.get("content-type"),
-            note: "rewrote-hls-playlist",
-            snippet: text.slice(0, 1200),
-          });
-          const resHeaders = new Headers({
-            "content-type":
-              response.headers.get("content-type") || "application/vnd.apple.mpegurl",
-            "cache-control": "no-store, no-cache, must-revalidate",
-            pragma: "no-cache",
-            expires: "0",
-            "X-Final-Destination": response.url,
-          });
-          return new NextResponse(playlist, {
-            status: response.status,
-            headers: resHeaders,
-          });
+    // ---- HLS playlist path ----
+    if (wantsHls || shouldRewriteHls(response, destination)) {
+      // Peek at the first few KB to decide if this is actually a playlist,
+      // avoiding buffering the full body for large non-playlist responses.
+      const reader = response.body?.getReader();
+      if (!reader) {
+        return streamError(response, debugSessionId, startedAt, method, destination, headers);
+      }
+
+      const peekChunks: Uint8Array[] = [];
+      let peekLen = 0;
+      let done = false;
+
+      while (peekLen < HLS_PEEK_BYTES) {
+        const result = await reader.read();
+        if (result.done) { done = true; break; }
+        peekChunks.push(result.value);
+        peekLen += result.value.byteLength;
+      }
+
+      const peekBuf = concatUint8Arrays(peekChunks, peekLen);
+      const peekText = new TextDecoder("utf-8", { fatal: false }).decode(peekBuf);
+
+      if (looksLikeHlsPlaylist(peekText, response, destination)) {
+        // It is a playlist — read the rest
+        const restChunks: Uint8Array[] = [peekBuf];
+        let totalLen = peekLen;
+        if (!done) {
+          while (true) {
+            const result = await reader.read();
+            if (result.done) break;
+            restChunks.push(result.value);
+            totalLen += result.value.byteLength;
+          }
         }
-        // Body already consumed — return buffer directly
-        await logProxyRequest({
+        const fullBuf = concatUint8Arrays(restChunks, totalLen);
+        const text = new TextDecoder("utf-8", { fatal: false }).decode(fullBuf);
+
+        const playlistBaseUrl = response.url || destination;
+        const playlist = rewriteHlsPlaylist(
+          text,
+          playlistBaseUrl,
+          payload?.headers ?? {},
+          payload?.debugSessionId
+        );
+
+        const resHeaderMap: Record<string, string> = {
+          "content-type":
+            response.headers.get("content-type") || "application/vnd.apple.mpegurl",
+          "cache-control": "no-store, no-cache, must-revalidate",
+          pragma: "no-cache",
+          expires: "0",
+          "X-Final-Destination": response.url,
+          "X-Proxy-Cache": "MISS",
+        };
+
+        // Cache the rewritten playlist
+        playlistCache.set(cacheKey, {
+          body: playlist,
+          headers: resHeaderMap,
+          status: response.status,
+          cachedAt: Date.now(),
+        });
+        evictLru(playlistCache, PLAYLIST_CACHE_MAX);
+
+        deferLog(debugSessionId, {
           sessionId: debugSessionId,
           method,
           destination,
@@ -119,23 +245,85 @@ async function handleProxy(req: NextRequest) {
           requestHeaders: sanitizeHeaders(headers),
           responseHeaders: pickResponseHeaders(response.headers),
           contentType: response.headers.get("content-type"),
-          note: "returned-buffer-body",
+          note: "rewrote-hls-playlist",
+          snippet: text.slice(0, 1200),
         });
-        const resHeaders = new Headers({
-          "cache-control": "no-store, no-cache, must-revalidate",
-          pragma: "no-cache",
-          expires: "0",
-          "X-Final-Destination": response.url,
+
+        return new NextResponse(playlist, {
+          status: response.status,
+          headers: new Headers(resHeaderMap),
         });
-        for (const header of RESPONSE_HEADER_ALLOWLIST) {
-          const value = response.headers.get(header);
-          if (value) resHeaders.set(header, value);
-        }
-        return new NextResponse(buffer, { status: response.status, headers: resHeaders });
       }
+
+      // Not a playlist — reconstruct a stream from peek + remainder and stream through
+      const reconstructed = reconstructStream(peekBuf, done ? null : reader);
+      const resHeaders = buildResponseHeaders(response);
+      resHeaders.set("X-Proxy-Cache", "MISS");
+
+      deferLog(debugSessionId, {
+        sessionId: debugSessionId,
+        method,
+        destination,
+        finalUrl: response.url,
+        status: response.status,
+        durationMs: Date.now() - startedAt,
+        requestHeaders: sanitizeHeaders(headers),
+        responseHeaders: pickResponseHeaders(response.headers),
+        contentType: response.headers.get("content-type"),
+        note: "streamed-non-playlist",
+      });
+
+      return new NextResponse(method === "HEAD" ? null : reconstructed, {
+        status: response.status,
+        headers: resHeaders,
+      });
     }
 
-    await logProxyRequest({
+    // ---- Cacheable segment path — buffer & cache ----
+    if (cacheable && response.ok) {
+      const buffer = await response.arrayBuffer();
+      const resHeaders = buildResponseHeaders(response);
+      const headerRecord: Record<string, string> = {};
+      resHeaders.forEach((v, k) => { headerRecord[k] = v; });
+
+      segmentCache.set(cacheKey, {
+        body: buffer,
+        status: response.status,
+        headers: headerRecord,
+        cachedAt: Date.now(),
+      });
+      evictLru(segmentCache, SEGMENT_CACHE_MAX);
+
+      resHeaders.set("X-Proxy-Cache", "MISS");
+
+      deferLog(debugSessionId, {
+        sessionId: debugSessionId,
+        method,
+        destination,
+        finalUrl: response.url,
+        status: response.status,
+        durationMs: Date.now() - startedAt,
+        requestHeaders: sanitizeHeaders(headers),
+        responseHeaders: pickResponseHeaders(response.headers),
+        contentType: response.headers.get("content-type"),
+        note: "segment-cached",
+      });
+
+      return new NextResponse(buffer, {
+        status: response.status,
+        headers: resHeaders,
+      });
+    }
+
+    // ---- Default: stream through ----
+    const resHeaders = buildResponseHeaders(response);
+
+    const setCookie = response.headers.get("set-cookie");
+    if (setCookie) {
+      resHeaders.set("X-Set-Cookie", setCookie);
+    }
+
+    deferLog(debugSessionId, {
       sessionId: debugSessionId,
       method,
       destination,
@@ -146,23 +334,6 @@ async function handleProxy(req: NextRequest) {
       responseHeaders: pickResponseHeaders(response.headers),
       contentType: response.headers.get("content-type"),
     });
-    const resHeaders = new Headers({
-      "cache-control": "no-store, no-cache, must-revalidate",
-      pragma: "no-cache",
-      expires: "0",
-      "X-Final-Destination": response.url,
-    });
-    for (const header of RESPONSE_HEADER_ALLOWLIST) {
-      const value = response.headers.get(header);
-      if (value) {
-        resHeaders.set(header, value);
-      }
-    }
-
-    const setCookie = response.headers.get("set-cookie");
-    if (setCookie) {
-      resHeaders.set("X-Set-Cookie", setCookie);
-    }
 
     return new NextResponse(method === "HEAD" ? null : response.body, {
       status: response.status,
@@ -170,7 +341,7 @@ async function handleProxy(req: NextRequest) {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Proxy error";
-    await logProxyRequest({
+    deferLog(debugSessionId, {
       sessionId: debugSessionId,
       method: req.method,
       destination,
@@ -182,6 +353,124 @@ async function handleProxy(req: NextRequest) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function buildResponseHeaders(response: Response): Headers {
+  const resHeaders = new Headers({
+    "X-Final-Destination": response.url,
+  });
+  for (const header of RESPONSE_HEADER_ALLOWLIST) {
+    const value = response.headers.get(header);
+    if (value) resHeaders.set(header, value);
+  }
+  return resHeaders;
+}
+
+function streamError(
+  response: Response,
+  debugSessionId: string | null,
+  startedAt: number,
+  method: string,
+  destination: string,
+  headers: Record<string, string>,
+) {
+  deferLog(debugSessionId, {
+    sessionId: debugSessionId,
+    method,
+    destination,
+    finalUrl: response.url,
+    status: response.status,
+    durationMs: Date.now() - startedAt,
+    requestHeaders: sanitizeHeaders(headers),
+    note: "no-readable-body",
+  });
+  return new NextResponse(null, { status: response.status, headers: buildResponseHeaders(response) });
+}
+
+function concatUint8Arrays(chunks: Uint8Array[], totalLen: number): Uint8Array {
+  if (chunks.length === 1) return chunks[0];
+  const out = new Uint8Array(totalLen);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return out;
+}
+
+function reconstructStream(
+  head: Uint8Array,
+  remainingReader: ReadableStreamDefaultReader<Uint8Array> | null,
+): ReadableStream<Uint8Array> {
+  let sentHead = false;
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      if (!sentHead) {
+        sentHead = true;
+        controller.enqueue(head);
+        if (!remainingReader) {
+          controller.close();
+          return;
+        }
+        return;
+      }
+      if (!remainingReader) {
+        controller.close();
+        return;
+      }
+      const { done, value } = await remainingReader.read();
+      if (done) {
+        controller.close();
+      } else {
+        controller.enqueue(value);
+      }
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Fire-and-forget logging via Next.js after()
+// ---------------------------------------------------------------------------
+function deferLog(sessionId: string | null, params: LogParams) {
+  if (!sessionId) return;
+  after(async () => {
+    await appendNetworkDebug({
+      ts: new Date().toISOString(),
+      kind: "proxy-request",
+      source: "proxy",
+      sessionId: params.sessionId,
+      method: params.method,
+      url: params.destination,
+      finalUrl: params.finalUrl,
+      status: params.status,
+      durationMs: params.durationMs,
+      requestHeaders: params.requestHeaders,
+      responseHeaders: params.responseHeaders,
+      contentType: params.contentType,
+      note: params.note,
+      error: params.error,
+      snippet: params.snippet,
+    });
+  });
+}
+
+type LogParams = {
+  sessionId: string | null;
+  method: string;
+  destination: string;
+  finalUrl?: string;
+  status?: number;
+  durationMs: number;
+  requestHeaders?: Record<string, string>;
+  responseHeaders?: Record<string, string>;
+  contentType?: string | null;
+  note?: string;
+  error?: string;
+  snippet?: string;
+};
 
 type ProxyPayload = {
   url: string;
@@ -404,54 +693,6 @@ function getPathname(url: string) {
   } catch {
     return url;
   }
-}
-
-async function logProxyRequest({
-  sessionId,
-  method,
-  destination,
-  finalUrl,
-  status,
-  durationMs,
-  requestHeaders,
-  responseHeaders,
-  contentType,
-  note,
-  error,
-  snippet,
-}: {
-  sessionId: string | null;
-  method: string;
-  destination: string;
-  finalUrl?: string;
-  status?: number;
-  durationMs: number;
-  requestHeaders?: Record<string, string>;
-  responseHeaders?: Record<string, string>;
-  contentType?: string | null;
-  note?: string;
-  error?: string;
-  snippet?: string;
-}) {
-  if (!sessionId) return;
-
-  await appendNetworkDebug({
-    ts: new Date().toISOString(),
-    kind: "proxy-request",
-    source: "proxy",
-    sessionId,
-    method,
-    url: destination,
-    finalUrl,
-    status,
-    durationMs,
-    requestHeaders,
-    responseHeaders,
-    contentType,
-    note,
-    error,
-    snippet,
-  });
 }
 
 function sanitizeHeaders(headers: Record<string, string>) {
