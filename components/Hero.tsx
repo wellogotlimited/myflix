@@ -2,8 +2,8 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useState } from "react";
-import { Play, X } from "@phosphor-icons/react";
+import { useEffect, useState } from "react";
+import { Play, SpeakerSimpleHigh, SpeakerSimpleSlash, X } from "@phosphor-icons/react";
 import { TMDBItem, backdropUrl, getMediaType, getTitle, getYear } from "@/lib/tmdb";
 
 export default function Hero({
@@ -16,10 +16,24 @@ export default function Hero({
   trailerKey?: string | null;
 }) {
   const [trailerOpen, setTrailerOpen] = useState(false);
+  const [bgVideoVisible, setBgVideoVisible] = useState(false);
+  const [muted, setMuted] = useState(true);
   const type = getMediaType(item);
   const title = getTitle(item);
   const bg = backdropUrl(item.backdrop_path, "original");
   const logo = logoPath ? backdropUrl(logoPath, "original") : "";
+
+  useEffect(() => {
+    setBgVideoVisible(false);
+    setMuted(true);
+    if (!trailerKey) return;
+    const timer = setTimeout(() => setBgVideoVisible(true), 3500);
+    return () => clearTimeout(timer);
+  }, [item.id, trailerKey]);
+
+  const bgVideoSrc = trailerKey
+    ? `https://www.youtube-nocookie.com/embed/${trailerKey}?autoplay=1&mute=${muted ? 1 : 0}&controls=0&loop=1&playlist=${trailerKey}&rel=0&modestbranding=1&playsinline=1&fs=0&iv_load_policy=3&disablekb=1`
+    : null;
 
   return (
     <>
@@ -30,6 +44,28 @@ export default function Hero({
             style={{ backgroundImage: `url(${bg})` }}
           />
         )}
+
+        {bgVideoSrc && (
+          <div
+            className={`absolute inset-0 transition-opacity duration-1000 ${bgVideoVisible ? "opacity-100" : "opacity-0"}`}
+          >
+            <iframe
+              key={`hero-${trailerKey}-${muted}`}
+              src={bgVideoSrc}
+              title=""
+              aria-hidden
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
+              style={{
+                width: "100%",
+                height: "56.25vw",
+                minWidth: "177.78vh",
+                minHeight: "100%",
+              }}
+            />
+          </div>
+        )}
+
         <div className="absolute inset-0 bg-gradient-to-t from-[#141414] via-[#141414]/35 to-transparent" />
         <div className="absolute inset-0 bg-gradient-to-r from-[#0d0d0d] via-[#141414]/40 to-transparent" />
 
@@ -71,7 +107,7 @@ export default function Hero({
                 <Play size={18} weight="fill" />
                 Play
               </Link>
-              {trailerKey && (
+              {trailerKey && !bgVideoVisible && (
                 <button
                   type="button"
                   onClick={() => setTrailerOpen(true)}
@@ -83,6 +119,20 @@ export default function Hero({
             </div>
           </div>
         </div>
+
+        {bgVideoSrc && bgVideoVisible && (
+          <button
+            type="button"
+            onClick={() => setMuted((m) => !m)}
+            className="absolute bottom-24 right-6 z-10 rounded-full border border-white/25 bg-black/40 p-3 text-white backdrop-blur-sm transition hover:bg-black/60 md:right-12"
+            title={muted ? "Unmute" : "Mute"}
+          >
+            {muted
+              ? <SpeakerSimpleSlash size={20} weight="bold" />
+              : <SpeakerSimpleHigh size={20} weight="bold" />
+            }
+          </button>
+        )}
       </section>
 
       {trailerOpen && trailerKey && (

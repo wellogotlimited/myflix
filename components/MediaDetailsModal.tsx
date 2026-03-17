@@ -10,6 +10,8 @@ import {
   CaretLeft,
   CaretRight,
   Play,
+  SpeakerSimpleHigh,
+  SpeakerSimpleSlash,
   X,
 } from "@phosphor-icons/react";
 import { useMyList } from "@/lib/my-list";
@@ -53,6 +55,7 @@ export default function MediaDetailsModal({
   onClose: () => void;
 }) {
   const [activeItem, setActiveItem] = useState(item);
+  const [headerMuted, setHeaderMuted] = useState(true);
   const [selectedTrailer, setSelectedTrailer] = useState<string | null>(null);
   const [selectedSeasonNumber, setSelectedSeasonNumber] = useState(1);
   const [seasonEpisodes, setSeasonEpisodes] = useState<TMDBEpisode[]>([]);
@@ -71,6 +74,10 @@ export default function MediaDetailsModal({
     setActiveItem(item);
     setMobileTab(0);
   }, [item]);
+
+  useEffect(() => {
+    setHeaderMuted(true);
+  }, [activeItem.id]);
 
   useEffect(() => {
     if (!open) return;
@@ -206,7 +213,7 @@ export default function MediaDetailsModal({
       <div className="fixed inset-0 z-[121] flex flex-col overflow-y-auto rounded-t-3xl bg-[#141414] md:hidden">
         {/* Backdrop */}
         <div className="relative w-full flex-shrink-0 aspect-video">
-          {heroImage && (
+          {heroImage && !data?.trailers?.[0] && (
             <Image
               src={heroImage}
               alt=""
@@ -216,14 +223,39 @@ export default function MediaDetailsModal({
               priority
             />
           )}
+          {data?.trailers?.[0] && (
+            <iframe
+              key={`modal-mobile-${activeItem.id}-${headerMuted}`}
+              src={`https://www.youtube-nocookie.com/embed/${data.trailers[0].key}?autoplay=1&mute=${headerMuted ? 1 : 0}&controls=0&loop=1&playlist=${data.trailers[0].key}&rel=0&modestbranding=1&playsinline=1&fs=0&iv_load_policy=3&disablekb=1`}
+              title=""
+              aria-hidden
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              className="pointer-events-none absolute inset-0 h-full w-full"
+            />
+          )}
           <div className="absolute inset-0 bg-gradient-to-t from-[#141414] via-[#141414]/20 to-transparent" />
-          <button
-            type="button"
-            onClick={onClose}
-            className="absolute right-4 top-4 z-10 rounded-full bg-black/50 p-2 text-white backdrop-blur-sm"
-          >
-            <X size={18} weight="bold" />
-          </button>
+          <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
+            {data?.trailers?.[0] && (
+              <button
+                type="button"
+                onClick={() => setHeaderMuted((m) => !m)}
+                className="rounded-full bg-black/50 p-2 text-white backdrop-blur-sm"
+                title={headerMuted ? "Unmute" : "Mute"}
+              >
+                {headerMuted
+                  ? <SpeakerSimpleSlash size={18} weight="bold" />
+                  : <SpeakerSimpleHigh size={18} weight="bold" />
+                }
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-full bg-black/50 p-2 text-white backdrop-blur-sm"
+            >
+              <X size={18} weight="bold" />
+            </button>
+          </div>
         </div>
 
         {/* Content */}
@@ -443,23 +475,54 @@ export default function MediaDetailsModal({
       {/* ── DESKTOP modal (unchanged) ── */}
       <div className="fixed inset-0 z-[121] hidden overflow-y-auto p-4 md:block md:p-8">
         <div className="mx-auto w-full max-w-5xl overflow-hidden rounded-[28px] border border-white/10 bg-[#181818] shadow-[0_32px_120px_rgba(0,0,0,0.55)]">
-          <button
-            type="button"
-            onClick={onClose}
-            className="absolute right-8 top-8 z-20 rounded-full bg-black/55 p-2.5 text-white transition hover:bg-black/75"
-            title="Close"
-          >
-            <X size={18} weight="bold" />
-          </button>
+          <div className="absolute right-8 top-8 z-20 flex items-center gap-2">
+            {data?.trailers?.[0] && (
+              <button
+                type="button"
+                onClick={() => setHeaderMuted((m) => !m)}
+                className="rounded-full border border-white/20 bg-black/55 p-2.5 text-white backdrop-blur-sm transition hover:bg-black/75"
+                title={headerMuted ? "Unmute" : "Mute"}
+              >
+                {headerMuted
+                  ? <SpeakerSimpleSlash size={18} weight="bold" />
+                  : <SpeakerSimpleHigh size={18} weight="bold" />
+                }
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-full bg-black/55 p-2.5 text-white transition hover:bg-black/75"
+              title="Close"
+            >
+              <X size={18} weight="bold" />
+            </button>
+          </div>
 
           <div className="relative aspect-[16/6] w-full overflow-hidden">
-            {heroImage && (
+            {heroImage && !data?.trailers?.[0] && (
               <Image
                 src={heroImage}
                 alt=""
                 fill
                 sizes="(max-width: 1024px) 100vw, 80rem"
                 className="object-cover"
+              />
+            )}
+            {data?.trailers?.[0] && (
+              <iframe
+                key={`modal-desktop-${activeItem.id}-${headerMuted}`}
+                src={`https://www.youtube-nocookie.com/embed/${data.trailers[0].key}?autoplay=1&mute=${headerMuted ? 1 : 0}&controls=0&loop=1&playlist=${data.trailers[0].key}&rel=0&modestbranding=1&playsinline=1&fs=0&iv_load_policy=3&disablekb=1`}
+                title=""
+                aria-hidden
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
+                style={{
+                  width: "100%",
+                  height: "56.25vw",
+                  minWidth: "177.78vh",
+                  minHeight: "100%",
+                }}
               />
             )}
             <div className="absolute inset-0 bg-gradient-to-t from-[#181818] via-[#181818]/28 to-transparent" />

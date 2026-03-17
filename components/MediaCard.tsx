@@ -8,6 +8,7 @@ import { BookmarkSimple, CaretRight, Play } from "@phosphor-icons/react";
 import MediaDetailsModal from "./MediaDetailsModal";
 import { useMyList } from "@/lib/my-list";
 import { useResumeProgress } from "@/lib/use-resume-progress";
+import { useMediaDetails } from "@/lib/use-media-details";
 import { TMDBItem, backdropUrl, posterUrl, getMediaType } from "@/lib/tmdb";
 
 type MediaCardLayout = "rail" | "grid";
@@ -47,6 +48,8 @@ export default function MediaCard({
   const isGrid = layout === "grid";
   const { isSaved, toggle } = useMyList(item);
   const resumeProgress = useResumeProgress(item, previewOpen);
+  const { data: previewData } = useMediaDetails(item, previewOpen);
+  const previewTrailerKey = previewData?.trailers?.[0]?.key ?? null;
   const previewWatchHref =
     type === "tv" && resumeProgress?.seasonNumber && resumeProgress?.episodeNumber
       ? `/watch/${type}/${item.id}?season=${resumeProgress.seasonNumber}&episode=${resumeProgress.episodeNumber}`
@@ -201,14 +204,25 @@ export default function MediaCard({
               }}
               className="block w-full text-left"
             >
-              <div className="relative aspect-video">
-                <Image
-                  src={cardImage}
-                  alt=""
-                  fill
-                  sizes="332px"
-                  className="object-cover"
-                />
+              <div className="relative aspect-video overflow-hidden">
+                {previewTrailerKey ? (
+                  <iframe
+                    key={`preview-${item.id}`}
+                    src={`https://www.youtube-nocookie.com/embed/${previewTrailerKey}?autoplay=1&mute=1&controls=0&loop=1&playlist=${previewTrailerKey}&rel=0&modestbranding=1&playsinline=1&fs=0&iv_load_policy=3&disablekb=1`}
+                    title=""
+                    aria-hidden
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    className="pointer-events-none absolute inset-0 h-full w-full"
+                  />
+                ) : (
+                  <Image
+                    src={cardImage}
+                    alt=""
+                    fill
+                    sizes="332px"
+                    className="object-cover"
+                  />
+                )}
                 <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
               </div>
             </button>
