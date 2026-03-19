@@ -4,24 +4,46 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import ProfileAvatar from "./ProfileAvatar";
+import PinEntryModal from "./PinEntryModal";
 
 interface Profile {
   _id: string;
   name: string;
   avatarId: string;
   maturityLevel: string;
+  hasPin?: boolean;
 }
 
 export default function ProfileSelector({ profiles }: { profiles: Profile[] }) {
   const { update } = useSession();
   const router = useRouter();
   const [switching, setSwitching] = useState<string | null>(null);
+  const [pinProfile, setPinProfile] = useState<Profile | null>(null);
+  const [error, setError] = useState("");
 
-  async function handleSelect(profile: Profile) {
+  async function selectProfile(profile: Profile) {
     setSwitching(profile._id);
-    await update({ profileId: profile._id });
-    router.push("/");
-    router.refresh();
+    setError("");
+
+    try {
+      const nextSession = await update({ profileId: profile._id });
+      if (nextSession?.user?.profileId !== profile._id) {
+        throw new Error("Profile switch did not persist");
+      }
+
+      window.location.replace("/");
+    } catch {
+      setError("Failed to open this profile. Try again.");
+      setSwitching(null);
+    }
+  }
+
+  function handleSelect(profile: Profile) {
+    if (profile.hasPin) {
+      setPinProfile(profile);
+      return;
+    }
+    selectProfile(profile);
   }
 
   return (
@@ -29,6 +51,12 @@ export default function ProfileSelector({ profiles }: { profiles: Profile[] }) {
       <h1 className="mb-12 text-4xl font-medium tracking-wide text-white">
         Who&apos;s watching?
       </h1>
+
+      {error && (
+        <p className="mb-6 rounded bg-red-500/15 px-4 py-3 text-sm text-red-300">
+          {error}
+        </p>
+      )}
 
       <div className="flex flex-wrap justify-center gap-6">
         {profiles.map((profile) => (
@@ -73,6 +101,22 @@ export default function ProfileSelector({ profiles }: { profiles: Profile[] }) {
       >
         MANAGE PROFILES
       </button>
+
+      {pinProfile && (
+        <PinEntryModal
+          profile={pinProfile}
+          onSuccess={() => {
+            // Capture the non-null profile before clearing state
+            const p: Profile = pinProfile;
+            setPinProfile(null);
+            selectProfile(p);
+          }}
+          onCancel={() => {
+            setPinProfile(null);
+            setSwitching(null);
+          }}
+        />
+      )}
     </div>
   );
 }

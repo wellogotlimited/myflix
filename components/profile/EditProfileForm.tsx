@@ -11,6 +11,7 @@ interface ProfileData {
   avatarId: string;
   maturityLevel: string;
   isKidsProfile: boolean;
+  hasPin: boolean;
 }
 
 export default function EditProfileForm({ profile }: { profile: ProfileData }) {
@@ -23,6 +24,13 @@ export default function EditProfileForm({ profile }: { profile: ProfileData }) {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  // PIN state
+  const [currentHasPin, setCurrentHasPin] = useState(profile.hasPin);
+  const [pinSection, setPinSection] = useState<"idle" | "set">("idle");
+  const [pinInput, setPinInput] = useState("");
+  const [pinError, setPinError] = useState("");
+  const [pinSaving, setPinSaving] = useState(false);
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
@@ -64,6 +72,41 @@ export default function EditProfileForm({ profile }: { profile: ProfileData }) {
     }
 
     router.push("/profiles/manage");
+  }
+
+  async function handleSavePin() {
+    if (!/^\d{4}$/.test(pinInput)) {
+      setPinError("PIN must be exactly 4 digits");
+      return;
+    }
+    setPinSaving(true);
+    setPinError("");
+    const res = await fetch(`/api/profile/${profile._id}/pin`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pin: pinInput }),
+    });
+    setPinSaving(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setPinError(data.error ?? "Failed to save PIN.");
+      return;
+    }
+    setCurrentHasPin(true);
+    setPinSection("idle");
+    setPinInput("");
+  }
+
+  async function handleRemovePin() {
+    if (!confirm("Remove PIN from this profile?")) return;
+    setPinSaving(true);
+    const res = await fetch(`/api/profile/${profile._id}/pin`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pin: null }),
+    });
+    setPinSaving(false);
+    if (res.ok) setCurrentHasPin(false);
   }
 
   return (
@@ -141,6 +184,70 @@ export default function EditProfileForm({ profile }: { profile: ProfileData }) {
             {maturityLevel === "TEEN" && "Shows content rated up to PG-13 / TV-14"}
             {maturityLevel === "ADULT" && "No content restrictions"}
           </p>
+        </div>
+
+        {/* PIN lock */}
+        <div className="border-t border-white/10 pt-6">
+          <p className="mb-3 text-sm font-medium text-gray-300">Profile PIN</p>
+          <p className="mb-4 text-xs text-gray-500">
+            Require a 4-digit PIN when switching to this profile.
+          </p>
+
+          {pinSection === "idle" ? (
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => { setPinSection("set"); setPinInput(""); setPinError(""); }}
+                className="rounded border border-gray-600 px-4 py-2 text-sm text-gray-300 transition hover:border-white hover:text-white"
+              >
+                {currentHasPin ? "Change PIN" : "Set PIN"}
+              </button>
+              {currentHasPin && (
+                <button
+                  type="button"
+                  onClick={handleRemovePin}
+                  disabled={pinSaving}
+                  className="rounded border border-red-800 px-4 py-2 text-sm text-red-500 transition hover:border-red-500 hover:text-red-400 disabled:opacity-60"
+                >
+                  Remove PIN
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <input
+                type="tel"
+                inputMode="numeric"
+                pattern="[0-9]{4}"
+                maxLength={4}
+                placeholder="Enter 4-digit PIN"
+                value={pinInput}
+                onChange={(e) => {
+                  setPinInput(e.target.value.replace(/\D/g, "").slice(0, 4));
+                  setPinError("");
+                }}
+                className="w-full rounded bg-[#333] px-4 py-3 text-white tracking-widest outline-none focus:bg-[#454545]"
+              />
+              {pinError && <p className="text-sm text-red-400">{pinError}</p>}
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={handleSavePin}
+                  disabled={pinInput.length !== 4 || pinSaving}
+                  className="rounded bg-white px-4 py-2 text-sm font-semibold text-black transition hover:bg-gray-200 disabled:opacity-40"
+                >
+                  {pinSaving ? "Saving…" : "Save PIN"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setPinSection("idle"); setPinInput(""); setPinError(""); }}
+                  className="rounded border border-gray-600 px-4 py-2 text-sm text-gray-400 transition hover:border-white hover:text-white"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="flex gap-3 pt-2">

@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { connectToDatabase, ProfileModel, serializeDocuments } from "@/lib/db";
 import ProfileSelector from "@/components/profile/ProfileSelector";
 
-export const metadata = { title: "Who's watching? вЂ” MyFlix" };
+export const metadata = { title: "Who's watching? - Popflix" };
 
 export default async function ProfilesPage() {
   const session = await auth();
@@ -21,6 +21,7 @@ export default async function ProfilesPage() {
     name: p.name,
     avatarId: p.avatarId,
     maturityLevel: p.maturityLevel,
+    hasPin: !!p.pin,
   }));
 
   return <ProfileSelector profiles={serialized} />;

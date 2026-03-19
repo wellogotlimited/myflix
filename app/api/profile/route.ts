@@ -19,7 +19,12 @@ export async function GET() {
     .sort({ createdAt: 1 })
     .lean();
 
-  return NextResponse.json(serializeDocuments(profiles));
+  return NextResponse.json(
+    profiles.map((p) => {
+      const { pin, ...rest } = p as typeof p & { pin?: string | null };
+      return { ...rest, _id: rest._id.toString(), hasPin: !!pin };
+    })
+  );
 }
 
 export async function POST(req: Request) {

@@ -4,9 +4,11 @@ import { NextResponse } from "next/server";
 const proxy = auth((req) => {
   const { pathname } = req.nextUrl;
   const session = req.auth;
+  const isPublicFile = /\.[^/]+$/.test(pathname);
 
   // Always allow static assets and Next.js internals
   if (
+    isPublicFile ||
     pathname.startsWith("/_next") ||
     pathname.startsWith("/api/auth") ||
     pathname === "/favicon.ico"
@@ -48,5 +50,5 @@ const proxy = auth((req) => {
 export default proxy;
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\..*).*)"],
 };

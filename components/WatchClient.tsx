@@ -8,14 +8,21 @@ import {
   useRef,
   useState,
 } from "react";
-import { useRouter } from "next/navigation";
+import { Users } from "@phosphor-icons/react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   createDebugSessionId,
   enableNetworkDebugCapture,
   resetNetworkDebug,
 } from "@/lib/network-debug-client";
+import {
+  buildPartyWatchHref,
+  matchesPartyMedia,
+  type WatchPartyState,
+} from "@/lib/party";
 import { useProfileSession } from "@/lib/profile-session";
 import type { TMDBEpisode, TMDBSeason } from "@/lib/tmdb";
+import WatchPartyPanel from "./party/WatchPartyPanel";
 import VideoPlayer from "./player/VideoPlayer";
 import ProviderStatus, { SourceStatus } from "./ProviderStatus";
 import WatchErrorState from "./WatchErrorState";
@@ -62,6 +69,22 @@ interface StreamResult {
   flags: string[];
 }
 
+type PartyRole = "host" | "guest" | null;
+
+function mergePartyCodeIntoHref(href: string, partyCode: string | null) {
+  const [pathname, search = ""] = href.split("?");
+  const params = new URLSearchParams(search);
+
+  if (partyCode) {
+    params.set("party", partyCode);
+  } else {
+    params.delete("party");
+  }
+
+  const query = params.toString();
+  return query ? `${pathname}?${query}` : pathname;
+}
+
 export default function WatchClient({
   media,
   title,
@@ -72,6 +95,8 @@ export default function WatchClient({
   showNavigation?: ShowNavigation;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { profileId } = useProfileSession();
   const [devMode] = useState(() =>
     typeof window !== "undefined" && localStorage.getItem("myflix-dev-mode") === "true"
@@ -85,6 +110,22 @@ export default function WatchClient({
   const [activeShowNavigation, setActiveShowNavigation] = useState(showNavigation);
   const [resumePosition, setResumePosition] = useState<number | undefined>(undefined);
   const lastSaveRef = useRef(0);
+  const lastPartySyncRef = useRef(0);
+  const playerPositionRef = useRef(0);
+  const [playerIsPlaying, setPlayerIsPlaying] = useState(false);
+  const [partySeekTo, setPartySeekTo] = useState<{ position: number; nonce: number } | null>(null);
+  const [partyPlayingState, setPartyPlayingState] = useState<{
+    playing: boolean;
+    nonce: number;
+  } | null>(null);
+  const initialPartyCode = useMemo(
+    () => searchParams.get("party")?.trim().toUpperCase() ?? null,
+    [searchParams]
+  );
+  const [partyCode, setPartyCode] = useState<string | null>(initialPartyCode);
+  const [partyRole, setPartyRole] = useState<PartyRole>(initialPartyCode ? "guest" : null);
+  const [partyState, setPartyState] = useState<WatchPartyState | null>(null);
+  const [partyPanelOpen, setPartyPanelOpen] = useState(Boolean(initialPartyCode));
 
   if (devMode && !debugSessionIdRef.current) {
     debugSessionIdRef.current = createDebugSessionId();
@@ -94,6 +135,13 @@ export default function WatchClient({
     setActiveMedia(media);
     setActiveShowNavigation(showNavigation);
   }, [media, showNavigation]);
+
+  useEffect(() => {
+    if (!initialPartyCode) return;
+    setPartyCode((current) => (current === initialPartyCode ? current : initialPartyCode));
+    setPartyRole((current) => current ?? "guest");
+    setPartyPanelOpen(true);
+  }, [initialPartyCode]);
 
   useEffect(() => {
     if (!devMode || !debugSessionIdRef.current) return;
@@ -121,77 +169,118 @@ export default function WatchClient({
         : undefined,
     [activeMedia]
   );
-  const scrape = useCallback(async (requestId: number, signal?: AbortSignal) => {
-    setError(null);
-    setStream(null);
-    setSources([]);
+  const isPartyHost = useMemo(() => {
+    if (!partyCode || !profileId) return false;
+    if (partyState) return partyState.hostProfileId === profileId;
+    return partyRole === "host";
+  }, [partyCode, partyRole, partyState, profileId]);
+  const partyMatchesActiveMedia = useMemo(
+    () =>
+      !partyState ||
+      matchesPartyMedia(partyState, {
+        type: activeMedia.type,
+        tmdbId: activeMedia.tmdbId,
+        seasonNumber: activeMedia.season?.number ?? null,
+        episodeNumber: activeMedia.episode?.number ?? null,
+      }),
+    [activeMedia, partyState]
+  );
+  const initialPlaybackPosition = useMemo(() => {
+    if (partyCode && !isPartyHost) {
+      return partyState?.positionSec;
+    }
 
-    try {
-      const scrapeMedia =
-        activeMedia.type === "movie"
-          ? {
-              type: "movie" as const,
-              title: activeMedia.title,
-              releaseYear: activeMedia.releaseYear,
-              tmdbId: activeMedia.tmdbId,
-              imdbId: activeMedia.imdbId,
-            }
-          : {
-              type: "show" as const,
-              title: activeMedia.title,
-              releaseYear: activeMedia.releaseYear,
-              tmdbId: activeMedia.tmdbId,
-              imdbId: activeMedia.imdbId,
-              season: {
-                number: activeMedia.season!.number,
-                tmdbId: activeMedia.season!.tmdbId,
-                title: activeMedia.season!.title,
-              },
-              episode: {
-                number: activeMedia.episode!.number,
-                tmdbId: activeMedia.episode!.tmdbId,
-              },
-            };
-
-      const response = await fetch("/api/scrape", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(scrapeMedia),
-        signal,
-      });
-
-      if (!response.ok || !response.body) {
-        throw new Error("Failed to connect to scrape API");
+    return resumePosition;
+  }, [isPartyHost, partyCode, partyState?.positionSec, resumePosition]);
+  const buildCurrentPartyHref = useCallback(
+    (nextPartyCode: string | null) => {
+      const nextSearch = new URLSearchParams(searchParams.toString());
+      if (nextPartyCode) {
+        nextSearch.set("party", nextPartyCode);
+      } else {
+        nextSearch.delete("party");
       }
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
+      const query = nextSearch.toString();
+      return query ? `${pathname}?${query}` : pathname;
+    },
+    [pathname, searchParams]
+  );
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+  const scrape = useCallback(
+    async (requestId: number, signal?: AbortSignal) => {
+      setError(null);
+      setStream(null);
+      setSources([]);
 
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
+      try {
+        const scrapeMedia =
+          activeMedia.type === "movie"
+            ? {
+                type: "movie" as const,
+                title: activeMedia.title,
+                releaseYear: activeMedia.releaseYear,
+                tmdbId: activeMedia.tmdbId,
+                imdbId: activeMedia.imdbId,
+              }
+            : {
+                type: "show" as const,
+                title: activeMedia.title,
+                releaseYear: activeMedia.releaseYear,
+                tmdbId: activeMedia.tmdbId,
+                imdbId: activeMedia.imdbId,
+                season: {
+                  number: activeMedia.season!.number,
+                  tmdbId: activeMedia.season!.tmdbId,
+                  title: activeMedia.season!.title,
+                },
+                episode: {
+                  number: activeMedia.episode!.number,
+                  tmdbId: activeMedia.episode!.tmdbId,
+                },
+              };
 
-        let eventType = "";
-        for (const line of lines) {
-          if (line.startsWith("event: ")) {
-            eventType = line.slice(7).trim();
-          } else if (line.startsWith("data: ") && eventType) {
-            const data = JSON.parse(line.slice(6));
-            handleEvent(requestId, eventType, data);
-            eventType = "";
+        const response = await fetch("/api/scrape", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(scrapeMedia),
+          signal,
+        });
+
+        if (!response.ok || !response.body) {
+          throw new Error("Failed to connect to scrape API");
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+
+          let eventType = "";
+          for (const line of lines) {
+            if (line.startsWith("event: ")) {
+              eventType = line.slice(7).trim();
+            } else if (line.startsWith("data: ") && eventType) {
+              const data = JSON.parse(line.slice(6));
+              handleEvent(requestId, eventType, data);
+              eventType = "";
+            }
           }
         }
+      } catch (err) {
+        if (signal?.aborted) return;
+        setError(err instanceof Error ? err.message : "Scraping failed");
       }
-    } catch (err) {
-      if (signal?.aborted) return;
-      setError(err instanceof Error ? err.message : "Scraping failed");
-    }
-  }, [activeMedia]);
+    },
+    [activeMedia]
+  );
 
   const startScrape = useCallback(() => {
     const nextRequestId = requestIdRef.current + 1;
@@ -249,15 +338,95 @@ export default function WatchClient({
         episodes,
       });
 
+      const nextHref = mergePartyCodeIntoHref(
+        `/watch/${activeShowNavigation.type}/${activeShowNavigation.showId}?season=${seasonNumber}&episode=${episode.episode_number}`,
+        partyCode
+      );
+
       startTransition(() => {
-        router.replace(
-          `/watch/${activeShowNavigation.type}/${activeShowNavigation.showId}?season=${seasonNumber}&episode=${episode.episode_number}`,
-          { scroll: false }
-        );
+        router.replace(nextHref, { scroll: false });
       });
     },
-    [activeMedia, activeShowNavigation, router]
+    [activeMedia, activeShowNavigation, partyCode, router]
   );
+
+  const handlePartyStateChange = useCallback(
+    (nextState: WatchPartyState | null) => {
+      setPartyState(nextState);
+
+      if (!nextState) {
+        return;
+      }
+
+      if (profileId) {
+        setPartyRole(nextState.hostProfileId === profileId ? "host" : "guest");
+      }
+    },
+    [profileId]
+  );
+
+  const handlePartyCreated = useCallback(
+    ({
+      code,
+      role,
+      state,
+    }: {
+      code: string;
+      role: "host" | "guest";
+      state?: WatchPartyState;
+    }) => {
+      setPartyCode(code);
+      setPartyRole(role);
+      setPartyState(state ?? null);
+      setPartyPanelOpen(true);
+
+      if (state && role === "guest") {
+        setPartySeekTo({ position: state.positionSec, nonce: Date.now() });
+        setPartyPlayingState({ playing: state.isPlaying, nonce: Date.now() });
+      }
+
+      startTransition(() => {
+        router.replace(buildCurrentPartyHref(code), { scroll: false });
+      });
+    },
+    [buildCurrentPartyHref, router]
+  );
+
+  const handlePartyEnded = useCallback(() => {
+    setPartyCode(null);
+    setPartyRole(null);
+    setPartyState(null);
+    setPartySeekTo(null);
+    setPartyPlayingState(null);
+
+    startTransition(() => {
+      router.replace(buildCurrentPartyHref(null), { scroll: false });
+    });
+  }, [buildCurrentPartyHref, router]);
+
+  const syncPartyPlaybackState = useCallback((force = false) => {
+    if (!partyCode || !isPartyHost) return;
+    const now = Date.now();
+    if (!force && now - lastPartySyncRef.current < 750) return;
+    lastPartySyncRef.current = now;
+
+    void fetch(`/api/party/${partyCode}/state`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        positionSec: playerPositionRef.current,
+        isPlaying: playerIsPlaying,
+        season: activeMedia.season?.number ?? null,
+        episode: activeMedia.episode?.number ?? null,
+      }),
+    }).catch(() => {});
+  }, [
+    activeMedia.episode?.number,
+    activeMedia.season?.number,
+    isPartyHost,
+    partyCode,
+    playerIsPlaying,
+  ]);
 
   function handleEvent(requestId: number, event: string, data: unknown) {
     if (requestId !== requestIdRef.current) return;
@@ -319,6 +488,39 @@ export default function WatchClient({
   }
 
   useEffect(() => {
+    playerPositionRef.current = 0;
+  }, [mediaKey]);
+
+  useEffect(() => {
+    if (!partyCode || !partyState || isPartyHost || partyMatchesActiveMedia) return;
+
+    const nextHref = mergePartyCodeIntoHref(buildPartyWatchHref(partyState), partyCode);
+    startTransition(() => {
+      router.replace(nextHref, { scroll: false });
+    });
+  }, [isPartyHost, partyCode, partyMatchesActiveMedia, partyState, router]);
+
+  useEffect(() => {
+    if (!partyCode || !isPartyHost) return;
+
+    syncPartyPlaybackState(true);
+    const interval = setInterval(() => syncPartyPlaybackState(true), 1500);
+    return () => clearInterval(interval);
+  }, [isPartyHost, partyCode, syncPartyPlaybackState]);
+
+  useEffect(() => {
+    if (!partyCode || !isPartyHost) return;
+    syncPartyPlaybackState(true);
+  }, [
+    activeMedia.episode?.number,
+    activeMedia.season?.number,
+    isPartyHost,
+    partyCode,
+    playerIsPlaying,
+    syncPartyPlaybackState,
+  ]);
+
+  useEffect(() => {
     if (!profileId) return;
     setResumePosition(undefined);
 
@@ -342,6 +544,11 @@ export default function WatchClient({
 
   const handleProgressUpdate = useCallback(
     (currentTime: number, duration: number) => {
+      playerPositionRef.current = currentTime;
+      if (partyCode && isPartyHost) {
+        syncPartyPlaybackState();
+      }
+
       if (!profileId) return;
       if (!duration || duration < 10) return;
       const now = Date.now();
@@ -365,7 +572,7 @@ export default function WatchClient({
         }),
       }).catch(() => {});
     },
-    [activeMedia, profileId]
+    [activeMedia, isPartyHost, partyCode, profileId, syncPartyPlaybackState]
   );
 
   useEffect(() => {
@@ -416,8 +623,11 @@ export default function WatchClient({
           debugSessionId={debugSessionIdRef.current ?? undefined}
           showNavigation={activeShowNavigation}
           onEpisodeSelect={handleEpisodeSelect}
-          initialPosition={resumePosition}
+          initialPosition={initialPlaybackPosition}
           onProgressUpdate={handleProgressUpdate}
+          onPlayStateChange={setPlayerIsPlaying}
+          partySeekTo={partySeekTo}
+          partyPlayingState={partyPlayingState}
         />
       ) : error ? (
         <WatchErrorState
@@ -442,6 +652,53 @@ export default function WatchClient({
               : undefined
           }
         />
+      )}
+
+      <button
+        type="button"
+        onClick={() => setPartyPanelOpen(true)}
+        className={`absolute right-4 top-4 z-40 inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold backdrop-blur-sm transition ${
+          partyCode
+            ? "border-[#e50914] bg-[#e50914] text-white shadow-[0_12px_30px_rgba(229,9,20,0.35)]"
+            : "border-white/15 bg-black/55 text-white/85 hover:bg-black/75"
+        }`}
+      >
+        <Users size={18} weight="fill" />
+        <span>{partyCode ? "Party Active" : "Watch Party"}</span>
+      </button>
+
+      {partyPanelOpen && (
+        <>
+          <button
+            type="button"
+            aria-label="Close watch party panel"
+            onClick={() => setPartyPanelOpen(false)}
+            className="absolute inset-0 z-40 bg-black/35"
+          />
+          <div className="absolute inset-y-0 right-0 z-50 w-full max-w-sm border-l border-white/10 bg-[#121212] shadow-2xl">
+            <WatchPartyPanel
+              tmdbId={Number(activeMedia.tmdbId)}
+              mediaType={activeMedia.type === "movie" ? "movie" : "tv"}
+              season={activeMedia.season?.number ?? null}
+              episode={activeMedia.episode?.number ?? null}
+              currentProfileId={profileId ?? ""}
+              partyCode={partyCode}
+              isHost={isPartyHost}
+              playerPositionRef={playerPositionRef}
+              isPlaying={playerIsPlaying}
+              onSeekTo={(position) =>
+                setPartySeekTo({ position, nonce: Date.now() })
+              }
+              onSetPlaying={(playing) =>
+                setPartyPlayingState({ playing, nonce: Date.now() })
+              }
+              onPartyCreated={handlePartyCreated}
+              onPartyStateChange={handlePartyStateChange}
+              onPartyEnded={handlePartyEnded}
+              onClose={() => setPartyPanelOpen(false)}
+            />
+          </div>
+        </>
       )}
     </div>
   );

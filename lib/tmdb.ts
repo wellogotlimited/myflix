@@ -522,13 +522,24 @@ export async function getLogoBadrop(
   try {
     const data = await tmdbFetch<TMDBImagesResponse>(
       `/${type}/${id}/images`,
-      { include_image_language: "en" }
+      { include_image_language: "en,null" }
     );
-    // English backdrops have logos — pick the highest rated one
-    const english = data.backdrops
-      .filter((img) => img.iso_639_1 === "en")
-      .sort((a, b) => b.vote_average - a.vote_average);
-    return english.length > 0 ? english[0].file_path : null;
+
+    const ranked = [...data.backdrops].sort((a, b) => {
+      const languageScore = (image: TMDBImage) => {
+        if (image.iso_639_1 === "en") return 2;
+        if (image.iso_639_1 === null) return 1;
+        return 0;
+      };
+
+      return (
+        languageScore(b) - languageScore(a) ||
+        b.vote_average - a.vote_average ||
+        b.width - a.width
+      );
+    });
+
+    return ranked[0]?.file_path ?? null;
   } catch {
     return null;
   }
@@ -586,6 +597,68 @@ async function getMediaHoverData(id: number, type: "movie" | "tv") {
     maturityRating: pickTVRating(data.content_ratings),
     genres: data.genres?.map((genre) => genre.name) ?? [],
   };
+}
+
+type Mood = "feel-good" | "intense-thrillers" | "action-packed" | "mind-bending" | "critically-acclaimed";
+
+interface MoodConfig {
+  label: string;
+  movieParams: Record<string, string>;
+  tvParams: Record<string, string>;
+}
+
+const MOOD_CONFIGS: Record<Mood, MoodConfig> = {
+  "feel-good": {
+    label: "Feel-Good Picks",
+    movieParams: { with_genres: "35,10751", "vote_average.gte": "7", sort_by: "popularity.desc" },
+    tvParams: { with_genres: "35,10751", "vote_average.gte": "7", sort_by: "popularity.desc" },
+  },
+  "intense-thrillers": {
+    label: "Intense Thrillers",
+    movieParams: { with_genres: "53,80", "vote_average.gte": "7", sort_by: "popularity.desc" },
+    tvParams: { with_genres: "53,80", "vote_average.gte": "7", sort_by: "popularity.desc" },
+  },
+  "action-packed": {
+    label: "Action-Packed",
+    movieParams: { with_genres: "28,12", sort_by: "popularity.desc" },
+    tvParams: { with_genres: "10759", sort_by: "popularity.desc" },
+  },
+  "mind-bending": {
+    label: "Mind-Bending",
+    movieParams: { with_genres: "878,9648", sort_by: "popularity.desc" },
+    tvParams: { with_genres: "10765,9648", sort_by: "popularity.desc" },
+  },
+  "critically-acclaimed": {
+    label: "Critically Acclaimed",
+    movieParams: { sort_by: "vote_average.desc", "vote_count.gte": "1000" },
+    tvParams: { sort_by: "vote_average.desc", "vote_count.gte": "1000" },
+  },
+};
+
+export async function getMoodItems(mood: Mood): Promise<{ label: string; items: TMDBItem[] }> {
+  const config = MOOD_CONFIGS[mood];
+
+  const [movies, shows] = await Promise.all([
+    tmdbFetchList("/discover/movie", config.movieParams, 1, "movie"),
+    tmdbFetchList("/discover/tv", config.tvParams, 1, "tv"),
+  ]);
+
+  // Interleave movies and shows, deduplicate by id+type
+  const seen = new Set<string>();
+  const combined: TMDBItem[] = [];
+  const maxLen = Math.max(movies.length, shows.length);
+  for (let i = 0; i < maxLen && combined.length < 20; i++) {
+    if (i < movies.length) {
+      const key = `movie-${movies[i].id}`;
+      if (!seen.has(key)) { seen.add(key); combined.push(movies[i]); }
+    }
+    if (i < shows.length && combined.length < 20) {
+      const key = `tv-${shows[i].id}`;
+      if (!seen.has(key)) { seen.add(key); combined.push(shows[i]); }
+    }
+  }
+
+  return { label: config.label, items: combined };
 }
 
 export async function attachCardContext(items: TMDBItem[]): Promise<TMDBItem[]> {

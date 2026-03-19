@@ -33,6 +33,8 @@ export interface ProfileDoc {
   avatarId: string;
   maturityLevel: MaturityLevel;
   isKidsProfile: boolean;
+  onboardingComplete: boolean;
+  pin?: string | null;
   createdAt: Date;
 }
 
@@ -80,12 +82,43 @@ export interface GenreAffinityDoc {
   score: number;
 }
 
+export interface WatchPartyMemberDoc {
+  profileId: string;
+  name: string;
+  avatarId: string;
+  joinedAt: Date;
+}
+
+export interface WatchPartyMessageDoc {
+  profileId: string;
+  name: string;
+  text: string;
+  sentAt: Date;
+}
+
+export interface WatchPartyDoc {
+  _id: string;
+  code: string;
+  hostProfileId: string;
+  tmdbId: number;
+  mediaType: "movie" | "tv";
+  season?: number | null;
+  episode?: number | null;
+  positionSec: number;
+  isPlaying: boolean;
+  lastUpdatedAt: Date;
+  members: WatchPartyMemberDoc[];
+  messages: WatchPartyMessageDoc[];
+  createdAt: Date;
+}
+
 interface AccountFields extends Omit<AccountDoc, "_id"> {}
 interface ProfileFields extends Omit<ProfileDoc, "_id"> {}
 interface BookmarkFields extends Omit<BookmarkDoc, "_id"> {}
 interface WatchProgressFields extends Omit<WatchProgressDoc, "_id"> {}
 interface WatchHistoryFields extends Omit<WatchHistoryDoc, "_id"> {}
 interface GenreAffinityFields extends Omit<GenreAffinityDoc, "_id"> {}
+interface WatchPartyFields extends Omit<WatchPartyDoc, "_id"> {}
 
 const accountSchema = new Schema<AccountFields>(
   {
@@ -103,6 +136,8 @@ const profileSchema = new Schema<ProfileFields>(
     avatarId: { type: String, required: true },
     maturityLevel: { type: String, enum: ["KIDS", "TEEN", "ADULT"], required: true },
     isKidsProfile: { type: Boolean, required: true },
+    onboardingComplete: { type: Boolean, required: true, default: false },
+    pin: { type: String, default: null },
     createdAt: { type: Date, required: true },
   },
   { versionKey: false }
@@ -167,6 +202,45 @@ const genreAffinitySchema = new Schema<GenreAffinityFields>(
 );
 genreAffinitySchema.index({ profileId: 1, genreId: 1 }, { unique: true });
 
+const watchPartyMemberSchema = new Schema<WatchPartyMemberDoc>(
+  {
+    profileId: { type: String, required: true },
+    name: { type: String, required: true },
+    avatarId: { type: String, required: true },
+    joinedAt: { type: Date, required: true },
+  },
+  { _id: false, versionKey: false }
+);
+
+const watchPartyMessageSchema = new Schema<WatchPartyMessageDoc>(
+  {
+    profileId: { type: String, required: true },
+    name: { type: String, required: true },
+    text: { type: String, required: true },
+    sentAt: { type: Date, required: true },
+  },
+  { _id: false, versionKey: false }
+);
+
+const watchPartySchema = new Schema<WatchPartyFields>(
+  {
+    code: { type: String, required: true, unique: true },
+    hostProfileId: { type: String, required: true },
+    tmdbId: { type: Number, required: true },
+    mediaType: { type: String, enum: ["movie", "tv"], required: true },
+    season: { type: Number, default: null },
+    episode: { type: Number, default: null },
+    positionSec: { type: Number, required: true, default: 0 },
+    isPlaying: { type: Boolean, required: true, default: false },
+    lastUpdatedAt: { type: Date, required: true },
+    members: { type: [watchPartyMemberSchema], default: [] },
+    messages: { type: [watchPartyMessageSchema], default: [] },
+    createdAt: { type: Date, required: true },
+  },
+  { versionKey: false }
+);
+watchPartySchema.index({ createdAt: 1 }, { expireAfterSeconds: 86400 });
+
 function getModel<T>(name: string, schema: Schema<T>, collection: string): Model<T> {
   return (models[name] as Model<T> | undefined) ?? model<T>(name, schema, collection);
 }
@@ -177,6 +251,7 @@ export const BookmarkModel = getModel("Bookmark", bookmarkSchema, "bookmarks");
 export const WatchProgressModel = getModel("WatchProgress", watchProgressSchema, "watchProgress");
 export const WatchHistoryModel = getModel("WatchHistory", watchHistorySchema, "watchHistory");
 export const GenreAffinityModel = getModel("GenreAffinity", genreAffinitySchema, "genreAffinities");
+export const WatchPartyModel = getModel("WatchParty", watchPartySchema, "watchParties");
 
 export async function connectToDatabase() {
   globalThis._mongooseConnection ??= mongoose.connect(uri, { dbName });

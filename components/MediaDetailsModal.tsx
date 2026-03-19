@@ -218,7 +218,7 @@ export default function MediaDetailsModal({
               src={heroImage}
               alt=""
               fill
-              sizes="100vw"
+              sizes="(max-width: 767px) 100vw, 0px"
               className="object-cover"
               priority
             />
@@ -452,7 +452,7 @@ export default function MediaDetailsModal({
                       src={`https://img.youtube.com/vi/${trailer.key}/hqdefault.jpg`}
                       alt={trailer.name}
                       fill
-                      sizes="100vw"
+                      sizes="(max-width: 767px) 100vw, 0px"
                       className="object-cover"
                     />
                     <div className="absolute inset-0 flex items-center justify-center bg-black/30">

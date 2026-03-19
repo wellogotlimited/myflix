@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { signIn } from "next-auth/react";
+import { signIn, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 
 export default function RegisterForm() {
   const router = useRouter();
+  const { update } = useSession();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -48,7 +49,13 @@ export default function RegisterForm() {
     if (result?.error) {
       setError("Account created but sign-in failed. Please sign in manually.");
     } else {
-      router.push("/profiles");
+      // Auto-select the first (and only) profile so onboarding has a profileId
+      const profilesRes = await fetch("/api/profile");
+      const profiles = await profilesRes.json().catch(() => []);
+      if (profiles[0]?._id) {
+        await update({ profileId: profiles[0]._id });
+      }
+      router.push("/onboarding");
     }
   }
 

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
+import BrandWordmark from "@/components/BrandWordmark";
 import ProfileSwitcher from "@/components/profile/ProfileSwitcher";
 
 const NAV_ITEMS = [
@@ -53,8 +54,12 @@ export default function Navbar() {
       }`}
     >
       <div className="flex min-w-0 items-center gap-8">
-        <Link href="/" className="text-2xl font-bold text-[#e50914] tracking-wide">
-          MYFLIX
+        <Link href="/" className="shrink-0">
+          <BrandWordmark
+            size={34}
+            priority
+            textClassName="text-xl font-bold tracking-wide text-white"
+          />
         </Link>
 
         <div className="hidden items-center gap-5 text-sm text-white/78 lg:flex">

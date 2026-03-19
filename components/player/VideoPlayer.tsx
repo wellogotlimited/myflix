@@ -55,6 +55,9 @@ interface VideoPlayerProps {
   }) => void;
   initialPosition?: number;
   onProgressUpdate?: (currentTime: number, duration: number) => void;
+  onPlayStateChange?: (isPlaying: boolean) => void;
+  partySeekTo?: { position: number; nonce: number } | null;
+  partyPlayingState?: { playing: boolean; nonce: number } | null;
 }
 
 type FullscreenCapableElement = HTMLDivElement & {
@@ -83,6 +86,9 @@ export default function VideoPlayer({
   onEpisodeSelect,
   initialPosition,
   onProgressUpdate,
+  onPlayStateChange,
+  partySeekTo,
+  partyPlayingState,
 }: VideoPlayerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -491,8 +497,8 @@ export default function VideoPlayer({
     const video = videoRef.current;
     if (!video) return;
 
-    const onPlay = () => setPlaying(true);
-    const onPause = () => setPlaying(false);
+    const onPlay = () => { setPlaying(true); onPlayStateChange?.(true); };
+    const onPause = () => { setPlaying(false); onPlayStateChange?.(false); };
     const onTimeUpdate = () => {
       setCurrentTime(video.currentTime);
       onProgressUpdate?.(video.currentTime, video.duration || 0);
@@ -540,6 +546,33 @@ export default function VideoPlayer({
       video.removeEventListener("ended", onEnded);
     };
   }, []);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !partySeekTo) return;
+
+    if (Math.abs(video.currentTime - partySeekTo.position) < 0.75) {
+      return;
+    }
+
+    video.currentTime = partySeekTo.position;
+  }, [partySeekTo]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !partyPlayingState) return;
+
+    if (partyPlayingState.playing) {
+      if (video.paused) {
+        video.play().catch(() => {});
+      }
+      return;
+    }
+
+    if (!video.paused) {
+      video.pause();
+    }
+  }, [partyPlayingState]);
 
   useEffect(() => {
     const doc = document as FullscreenCapableDocument;

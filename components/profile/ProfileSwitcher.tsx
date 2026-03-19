@@ -3,14 +3,15 @@
 import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useState, useEffect, useRef } from "react";
-import { Gear } from "@phosphor-icons/react";
 import ProfileAvatar from "./ProfileAvatar";
+import PinEntryModal from "./PinEntryModal";
 
 interface Profile {
   _id: string;
   name: string;
   avatarId: string;
   maturityLevel: string;
+  hasPin?: boolean;
 }
 
 export default function ProfileSwitcher() {
@@ -18,6 +19,8 @@ export default function ProfileSwitcher() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [pinProfile, setPinProfile] = useState<Profile | null>(null);
+  const [switchError, setSwitchError] = useState("");
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -42,11 +45,28 @@ export default function ProfileSwitcher() {
 
   const currentProfile = profiles.find((p) => p._id === session.user.profileId);
 
-  async function switchProfile(profile: Profile) {
+  async function doSwitch(profile: Profile) {
+    setSwitchError("");
+
+    try {
+      const nextSession = await update({ profileId: profile._id });
+      if (nextSession?.user?.profileId !== profile._id) {
+        throw new Error("Profile switch did not persist");
+      }
+
+      window.location.replace("/");
+    } catch {
+      setSwitchError("Failed to switch profile.");
+    }
+  }
+
+  function switchProfile(profile: Profile) {
     setOpen(false);
-    await update({ profileId: profile._id });
-    router.push("/");
-    router.refresh();
+    if (profile.hasPin) {
+      setPinProfile(profile);
+      return;
+    }
+    doSwitch(profile);
   }
 
   return (
@@ -81,6 +101,9 @@ export default function ProfileSwitcher() {
 
       {open && (
         <div className="absolute right-0 top-full mt-2 w-52 rounded bg-[#1a1a1a] shadow-xl ring-1 ring-white/10">
+          {switchError && (
+            <p className="px-4 pt-3 text-xs text-red-400">{switchError}</p>
+          )}
           {profiles
             .filter((p) => p._id !== session.user.profileId)
             .map((profile) => (
@@ -94,7 +117,7 @@ export default function ProfileSwitcher() {
               </button>
             ))}
 
-          <div className="my-1 border-t border-white/10" />
+          {profiles.length > 1 && <div className="my-1 border-t border-white/10" /> }
 
           <button
             onClick={() => { setOpen(false); router.push("/profiles/manage"); }}
@@ -106,7 +129,6 @@ export default function ProfileSwitcher() {
             onClick={() => { setOpen(false); router.push("/settings"); }}
             className="flex w-full items-center gap-3 px-4 py-3 text-sm text-gray-300 transition hover:bg-white/10 hover:text-white"
           >
-            <Gear size={18} />
             Settings
           </button>
           <button
@@ -125,6 +147,18 @@ export default function ProfileSwitcher() {
             Sign Out
           </button>
         </div>
+      )}
+
+      {pinProfile && (
+        <PinEntryModal
+          profile={pinProfile}
+          onSuccess={() => {
+            const p: Profile = pinProfile;
+            setPinProfile(null);
+            doSwitch(p);
+          }}
+          onCancel={() => setPinProfile(null)}
+        />
       )}
     </div>
   );

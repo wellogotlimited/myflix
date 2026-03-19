@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  allowedDevOrigins: ["127.0.0.1", "localhost"],
   images: {
     remotePatterns: [
       {
@@ -12,11 +13,12 @@ const nextConfig: NextConfig = {
         protocol: "https",
         hostname: "img.youtube.com",
         pathname: "/vi/**",
-      }
+      },
     ],
   },
   devIndicators: false,
-  output: "standalone"
+  output: "standalone",
+  turbopack: {},
 };
 
 export default nextConfig;

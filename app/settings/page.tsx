@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import AppSettingsContent from "@/components/AppSettingsContent";
 
-export const metadata = { title: "Settings - MyFlix" };
+export const metadata = { title: "Settings - Popflix" };
 
 export default async function SettingsPage() {
   const session = await auth();

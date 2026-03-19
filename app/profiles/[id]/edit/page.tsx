@@ -1,9 +1,15 @@
 import { redirect, notFound } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { connectToDatabase, isValidObjectId, ProfileModel, serializeDocument, toObjectId } from "@/lib/db";
+import {
+  connectToDatabase,
+  isValidObjectId,
+  ProfileModel,
+  serializeDocument,
+  toObjectId,
+} from "@/lib/db";
 import EditProfileForm from "@/components/profile/EditProfileForm";
 
-export const metadata = { title: "Edit Profile вЂ” MyFlix" };
+export const metadata = { title: "Edit Profile - Popflix" };
 
 export default async function EditProfilePage({
   params,
@@ -34,6 +40,7 @@ export default async function EditProfilePage({
         avatarId: profile.avatarId,
         maturityLevel: profile.maturityLevel,
         isKidsProfile: profile.isKidsProfile,
+        hasPin: !!profile.pin,
       }}
     />
   );

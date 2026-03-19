@@ -4,6 +4,8 @@ import Navbar from "@/components/Navbar";
 import Providers from "@/components/Providers";
 import MobileBottomNav from "@/components/mobile/MobileBottomNav";
 import PortraitLock from "@/components/PortraitLock";
+import OnboardingGuard from "@/components/OnboardingGuard";
+import PWAInstallBanner from "@/components/PWAInstallBanner";
 import "./globals.css";
 
 const netflixSans = localFont({
@@ -25,10 +27,21 @@ const netflixSans = localFont({
   display: "swap",
 });
 
-
 export const metadata: Metadata = {
-  title: "MyFlix",
+  title: "Popflix",
+  applicationName: "Popflix",
   description: "Stream movies and TV shows",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Popflix",
+  },
+  icons: {
+    icon: "/icon-512.png",
+    shortcut: "/icon-192.png",
+    apple: "/apple-icon.png",
+  },
 };
 
 export const viewport = {
@@ -36,6 +49,7 @@ export const viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
+  themeColor: "#e50914",
 };
 
 export default function RootLayout({
@@ -47,11 +61,13 @@ export default function RootLayout({
     <html lang="en">
       <body className={`${netflixSans.variable} antialiased bg-[#141414] text-white`}>
         <Providers>
+          <OnboardingGuard />
           <div className="hidden md:block">
             <Navbar />
           </div>
           {children}
           <MobileBottomNav />
+          <PWAInstallBanner />
           <PortraitLock />
         </Providers>
       </body>

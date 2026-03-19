@@ -4,7 +4,7 @@ import { auth } from "@/lib/auth";
 import { connectToDatabase, ProfileModel, serializeDocuments } from "@/lib/db";
 import ProfileAvatar from "@/components/profile/ProfileAvatar";
 
-export const metadata = { title: "Manage Profiles вЂ” MyFlix" };
+export const metadata = { title: "Manage Profiles - Popflix" };
 
 export default async function ManageProfilesPage() {
   const session = await auth();
@@ -32,8 +32,10 @@ export default async function ManageProfilesPage() {
               <div>
                 <p className="font-medium text-white">{profile.name}</p>
                 <p className="text-xs text-gray-400">
-                  {profile.isKidsProfile ? "Kids" : profile.maturityLevel.charAt(0) + profile.maturityLevel.slice(1).toLowerCase()}
-                  {" В· "}Maturity
+                  {profile.isKidsProfile
+                    ? "Kids"
+                    : profile.maturityLevel.charAt(0) + profile.maturityLevel.slice(1).toLowerCase()}
+                  {" · "}Maturity
                 </p>
               </div>
             </div>

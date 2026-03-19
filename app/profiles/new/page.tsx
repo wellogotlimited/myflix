@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { connectToDatabase, ProfileModel } from "@/lib/db";
 import CreateProfileForm from "@/components/profile/CreateProfileForm";
 
-export const metadata = { title: "Add Profile - MyFlix" };
+export const metadata = { title: "Add Profile - Popflix" };
 
 export default async function NewProfilePage() {
   const session = await auth();

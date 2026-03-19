@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>You're offline - Popflix</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #141414;
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 24px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 40px;
+    }
+    .brand img {
+      width: 48px;
+      height: 48px;
+    }
+    .brand span {
+      font-size: 2rem;
+      font-weight: 900;
+      letter-spacing: 0.04em;
+    }
+    .icon {
+      font-size: 4rem;
+      margin-bottom: 24px;
+    }
+    h1 {
+      font-size: 1.75rem;
+      font-weight: 700;
+      margin-bottom: 12px;
+    }
+    p {
+      color: #aaa;
+      font-size: 1rem;
+      line-height: 1.6;
+      max-width: 320px;
+      margin-bottom: 36px;
+    }
+    button {
+      background: #e50914;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      padding: 12px 32px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    button:hover { background: #f40612; }
+  </style>
+</head>
+<body>
+  <div class="brand">
+    <img src="/logo.png" alt="Popflix logo" />
+    <span>Popflix</span>
+  </div>
+  <div class="icon">Offline</div>
+  <h1>You're offline</h1>
+  <p>Check your internet connection and try again.</p>
+  <button onclick="window.location.reload()">Try Again</button>
+</body>
+</html>

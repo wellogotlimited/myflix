@@ -21,6 +21,7 @@ import {
   getMediaType,
   posterUrl,
 } from "@/lib/tmdb";
+import MoodRows from "@/components/MoodRows";
 import { requireProfile } from "@/lib/session";
 import { passesMaturityFilter } from "@/lib/maturity";
 
@@ -118,7 +119,7 @@ export default async function Home({
                 src={mobileHeroPoster}
                 alt=""
                 fill
-                sizes="100vw"
+                sizes="(max-width: 767px) 92vw, 0px"
                 className="scale-[1.35] object-cover object-top opacity-45 blur-3xl saturate-150"
                 aria-hidden="true"
                 priority
@@ -152,6 +153,9 @@ export default async function Home({
         <MediaRow title="Popular TV Shows" items={popularShows} />
         <MediaRow title="Top Rated Movies" items={topMovies} />
         <MediaRow title="Top Rated TV Shows" items={topShows} />
+        <Suspense fallback={null}>
+          <MoodRows maturityLevel={maturityLevel} />
+        </Suspense>
       </div>
 
       {/* Mobile rows */}
@@ -185,6 +189,9 @@ export default async function Home({
             <MediaRow title="Popular Shows" items={popularShows} portrait />
             <MediaRow title="Top Rated Movies" items={topMovies} portrait />
             <MediaRow title="Top Rated Shows" items={topShows} portrait />
+            <Suspense fallback={null}>
+              <MoodRows maturityLevel={maturityLevel} portrait />
+            </Suspense>
           </>
         )}
       </div>

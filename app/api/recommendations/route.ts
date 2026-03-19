@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { connectToDatabase, GenreAffinityModel, WatchHistoryModel } from "@/lib/db";
 import { requireProfile } from "@/lib/session";
 import type { MaturityLevel } from "@/lib/maturity";
+import { attachCardContext } from "@/lib/tmdb";
 
 const TMDB_BASE = "https://api.themoviedb.org/3";
 
@@ -92,9 +93,11 @@ export async function GET() {
           media_type: item.title ? "movie" : "tv",
         }));
 
+      const items = await attachCardContext(combined);
+
       return {
         title: `More ${GENRE_NAMES[genreId] ?? "like what you watch"}`,
-        items: combined,
+        items,
       };
     })
   );
