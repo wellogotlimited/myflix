@@ -6,34 +6,27 @@ import { attachCardContext } from "@/lib/tmdb";
 
 const TMDB_BASE = "https://api.themoviedb.org/3";
 
-// TMDB certification ceiling per maturity level, for movies and TV separately.
 const MOVIE_CERT: Record<MaturityLevel, string | null> = {
   KIDS: "G",
   TEEN: "PG-13",
   ADULT: null,
 };
-const TV_CERT: Record<MaturityLevel, string | null> = {
-  KIDS: "TV-G",
-  TEEN: "TV-14",
-  ADULT: null,
-};
 
 async function tmdbDiscover(
-  type: "movie" | "tv",
   genreId: number,
   maturityLevel: MaturityLevel
 ): Promise<Array<{ id: number; title?: string; name?: string; poster_path: string | null; backdrop_path: string | null; vote_average: number; genre_ids?: number[]; release_date?: string; first_air_date?: string; overview: string }>> {
   const apiKey = process.env.TMDB_API_KEY;
   if (!apiKey) return [];
 
-  const url = new URL(`${TMDB_BASE}/discover/${type}`);
+  const url = new URL(`${TMDB_BASE}/discover/movie`);
   url.searchParams.set("api_key", apiKey);
   url.searchParams.set("with_genres", String(genreId));
   url.searchParams.set("sort_by", "popularity.desc");
   url.searchParams.set("vote_count.gte", "50");
 
   // Apply TMDB-side certification filter so we never return unsuitable content
-  const certCeiling = type === "movie" ? MOVIE_CERT[maturityLevel] : TV_CERT[maturityLevel];
+  const certCeiling = MOVIE_CERT[maturityLevel];
   if (certCeiling) {
     url.searchParams.set("certification_country", "US");
     url.searchParams.set("certification.lte", certCeiling);
@@ -79,18 +72,15 @@ export async function GET() {
 
   const rows = await Promise.all(
     topGenres.map(async ({ genreId }) => {
-      const [movies, shows] = await Promise.all([
-        tmdbDiscover("movie", genreId, profile.maturityLevel),
-        tmdbDiscover("tv", genreId, profile.maturityLevel),
-      ]);
+      const movies = await tmdbDiscover(genreId, profile.maturityLevel);
 
-      const combined = [...movies, ...shows]
+      const combined = movies
         .filter((item) => !watchedIds.has(item.id))
         .sort((a, b) => b.vote_average - a.vote_average)
         .slice(0, 20)
         .map((item) => ({
           ...item,
-          media_type: item.title ? "movie" : "tv",
+          media_type: "movie",
         }));
 
       const items = await attachCardContext(combined);

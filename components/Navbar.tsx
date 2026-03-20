@@ -5,13 +5,10 @@ import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import BrandWordmark from "@/components/BrandWordmark";
 import ProfileSwitcher from "@/components/profile/ProfileSwitcher";
-import { detectTvMode } from "@/lib/tv-mode";
 
 const NAV_ITEMS = [
   { label: "Home", href: "/" },
   { label: "Movies", href: "/movies" },
-  { label: "Shows", href: "/shows" },
-  { label: "Animes", href: "/animes" },
   { label: "My List", href: "/my-list" },
   { label: "New & Upcoming", href: "/new-and-upcoming" },
 ];
@@ -22,38 +19,16 @@ export default function Navbar() {
   const [query, setQuery] = useState("");
   const [scrolled, setScrolled] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [isTvMode, setIsTvMode] = useState(false);
   const isWatchPage = pathname.startsWith("/watch/");
   const isAuthPage =
     pathname === "/login" ||
     pathname === "/register" ||
-    pathname === "/profiles" ||
-    pathname === "/tv";
+    pathname === "/profiles";
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
     window.addEventListener("scroll", onScroll);
     return () => window.removeEventListener("scroll", onScroll);
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    void detectTvMode()
-      .then((result) => {
-        if (!cancelled) {
-          setIsTvMode(result);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setIsTvMode(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
   }, []);
 
   function handleSearch(e: React.FormEvent) {
@@ -64,7 +39,7 @@ export default function Navbar() {
     }
   }
 
-  if (isAuthPage || isTvMode) return null;
+  if (isAuthPage) return null;
 
   return (
     <nav

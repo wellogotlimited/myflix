@@ -180,8 +180,8 @@ export default function EditProfileForm({ profile }: { profile: ProfileData }) {
             ))}
           </div>
           <p className="mt-2 text-xs text-gray-500">
-            {maturityLevel === "KIDS" && "Shows content rated G, TV-Y, TV-G only"}
-            {maturityLevel === "TEEN" && "Shows content rated up to PG-13 / TV-14"}
+            {maturityLevel === "KIDS" && "Shows content rated G only"}
+            {maturityLevel === "TEEN" && "Shows content rated up to PG-13"}
             {maturityLevel === "ADULT" && "No content restrictions"}
           </p>
         </div>

@@ -5,7 +5,7 @@ import { requireProfile } from "@/lib/session";
 
 const addSchema = z.object({
   tmdbId: z.number(),
-  mediaType: z.enum(["movie", "tv"]),
+  mediaType: z.literal("movie"),
   title: z.string(),
   posterPath: z.string().nullable().optional(),
 });
@@ -19,7 +19,9 @@ export async function GET() {
     .sort({ savedAt: -1 })
     .lean();
 
-  return NextResponse.json(serializeDocuments(bookmarks));
+  return NextResponse.json(
+    serializeDocuments(bookmarks).filter((bookmark) => bookmark.mediaType === "movie")
+  );
 }
 
 export async function POST(req: Request) {

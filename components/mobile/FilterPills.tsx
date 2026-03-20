@@ -32,16 +32,6 @@ export default function FilterPills({ currentFilter }: { currentFilter?: string 
     <>
       <div className="flex gap-2 overflow-x-auto px-4 py-3 scrollbar-hide md:hidden">
         <button
-          onClick={currentFilter === "shows" ? clearFilter : () => setFilter("shows")}
-          className={`flex-shrink-0 rounded-full border px-4 py-1 text-sm text-white ${
-            currentFilter === "shows"
-              ? "border-white bg-white/10"
-              : "border-white/40 bg-transparent"
-          }`}
-        >
-          Shows
-        </button>
-        <button
           onClick={currentFilter === "movies" ? clearFilter : () => setFilter("movies")}
           className={`flex-shrink-0 rounded-full border px-4 py-1 text-sm text-white ${
             currentFilter === "movies"

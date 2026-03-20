@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { CaretLeft, CaretRight, FastForward, Lock, Pause, Play, Rewind } from "@phosphor-icons/react";
 import { useSkipSegments } from "./hooks/useSkipSegments";
-import { useChromecast } from "./hooks/useChromecast";
 import { useAirPlay } from "./hooks/useAirPlay";
 import Hls from "hls.js";
 import type { TMDBEpisode, TMDBSeason } from "@/lib/tmdb";
@@ -206,7 +205,6 @@ export default function VideoPlayer({
   }, [showNavigation]);
 
   // ── Cast / AirPlay ──────────────────────────────────────────────────────
-  const cast = useChromecast(stream, videoRef, title);
   const airPlay = useAirPlay(videoRef);
 
   // Fetch real intro/recap/credits/preview timestamps via server-side proxy
@@ -1330,10 +1328,6 @@ export default function VideoPlayer({
           subtitleDelay={subtitleDelay}
           hasEpisodeSelector={!!showNavigation}
           isEpisodeSelectorOpen={showEpisodePanel}
-          castAvailable={cast.available}
-          castConnected={cast.connected}
-          castConnecting={cast.connecting}
-          onCastToggle={cast.toggleCast}
           airPlayAvailable={airPlay.available}
           airPlayActive={airPlay.active}
           onAirPlayToggle={airPlay.toggleAirPlay}

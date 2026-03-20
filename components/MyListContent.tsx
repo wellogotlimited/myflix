@@ -11,7 +11,10 @@ export default function MyListContent({
 }) {
   const { items } = useMyList();
   const sortedItems = useMemo(
-    () => [...items].sort((a, b) => b.savedAt - a.savedAt),
+    () =>
+      [...items]
+        .filter((item) => item.media_type === "movie")
+        .sort((a, b) => b.savedAt - a.savedAt),
     [items]
   );
 

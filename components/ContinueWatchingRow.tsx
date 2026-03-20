@@ -50,6 +50,7 @@ export default function ContinueWatchingRow() {
     const grouped = new Map<string, ProgressItem>();
 
     for (const item of items) {
+      if (item.mediaType !== "movie") continue;
       const key = `${item.mediaType}:${item.tmdbId}`;
       const existing = grouped.get(key);
 
@@ -89,10 +90,7 @@ export default function ContinueWatchingRow() {
 
       <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
         {visibleItems.map((item) => {
-          const href =
-            item.mediaType === "movie"
-              ? `/watch/movie/${item.tmdbId}`
-              : `/watch/tv/${item.tmdbId}?season=${item.seasonNumber ?? 1}&episode=${item.episodeNumber ?? 1}`;
+          const href = `/watch/movie/${item.tmdbId}`;
 
           const progress =
             item.durationSec > 0 ? (item.positionSec / item.durationSec) * 100 : 0;
@@ -121,9 +119,6 @@ export default function ContinueWatchingRow() {
 
                 <p className="mt-1.5 truncate text-xs text-gray-300">{item.title}</p>
                 <p className="truncate text-xs text-white/80">{getResumeLabel(item)}</p>
-                {item.mediaType === "tv" && item.episodeTitle ? (
-                  <p className="truncate text-xs text-gray-500">{item.episodeTitle}</p>
-                ) : null}
               </Link>
 
               <button
@@ -168,10 +163,6 @@ function getProgressRatio(item: ProgressItem) {
 }
 
 function getResumeLabel(item: ProgressItem) {
-  if (item.mediaType === "tv" && item.seasonNumber && item.episodeNumber) {
-    return `Resume watching S${item.seasonNumber}:E${item.episodeNumber}`;
-  }
-
   return `Resume from ${formatTime(item.positionSec)}`;
 }
 

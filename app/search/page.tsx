@@ -1,6 +1,6 @@
 export const dynamic = "force-dynamic";
 
-import { attachCardContext, searchMulti, getTrending } from "@/lib/tmdb";
+import { attachCardContext, filterMovieItems, searchMulti, getTrending } from "@/lib/tmdb";
 import { requireProfile } from "@/lib/session";
 import { passesMaturityFilter } from "@/lib/maturity";
 import MediaCard from "@/components/MediaCard";
@@ -25,8 +25,10 @@ export default async function SearchPage({
     !query ? getTrending() : Promise.resolve([]),
   ]);
 
-  const results = applyMaturity(await attachCardContext(searchRaw));
-  const recommended = applyMaturity(await attachCardContext(trendingRaw.slice(0, 15)));
+  const results = applyMaturity(await attachCardContext(filterMovieItems(searchRaw)));
+  const recommended = applyMaturity(
+    await attachCardContext(filterMovieItems(trendingRaw).slice(0, 15))
+  );
 
   return (
     <>
