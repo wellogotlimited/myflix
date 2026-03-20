@@ -27,7 +27,14 @@ export async function GET(
 
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
-      controller.enqueue(encoder.encode(encodeSse("state", serializePartyState(party))));
+      controller.enqueue(
+        encoder.encode(
+          encodeSse("state", {
+            type: "state",
+            party: serializePartyState(party),
+          })
+        )
+      );
 
       let closed = false;
       const unsubscribe = subscribeToParty(code, (event) => {

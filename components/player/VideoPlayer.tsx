@@ -4,8 +4,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { CaretLeft, CaretRight, FastForward, Lock, Pause, Play, Rewind } from "@phosphor-icons/react";
 import { useSkipSegments } from "./hooks/useSkipSegments";
+import { useChromecast } from "./hooks/useChromecast";
+import { useAirPlay } from "./hooks/useAirPlay";
 import Hls from "hls.js";
 import type { TMDBEpisode, TMDBSeason } from "@/lib/tmdb";
+import {
+  TV_PLAYER_CAPTION_COMMAND_EVENT,
+  TV_PLAYER_CAPTION_STATE_EVENT,
+  type TvPlayerCaptionStatePayload,
+  type TvReceiverCommand,
+} from "@/lib/tv-remote";
 import Controls from "./Controls";
 import EpisodeNavigator from "./EpisodeNavigator";
 import MobileControls from "./MobileControls";
@@ -197,6 +205,10 @@ export default function VideoPlayer({
     return null;
   }, [showNavigation]);
 
+  // ── Cast / AirPlay ──────────────────────────────────────────────────────
+  const cast = useChromecast(stream, videoRef, title);
+  const airPlay = useAirPlay(videoRef);
+
   // Fetch real intro/recap/credits/preview timestamps via server-side proxy
   const segments = useSkipSegments(
     showNavigation?.showId ?? null,
@@ -239,6 +251,52 @@ export default function VideoPlayer({
     if (activeCaption.content) return parseCaptions(activeCaption.content);
     return captionCues;
   }, [activeCaption, captionCues]);
+  useEffect(() => {
+    const emitCaptionState = () => {
+      const payload: TvPlayerCaptionStatePayload = {
+        captionsAvailable: captions.length > 0,
+        captionsEnabled: activeCaptionIdx >= 0,
+        captions: captions.map((caption, index) => ({
+          index,
+          label: caption.label,
+        })),
+        activeCaptionIndex: activeCaptionIdx,
+      };
+
+      window.dispatchEvent(
+        new CustomEvent<TvPlayerCaptionStatePayload>(TV_PLAYER_CAPTION_STATE_EVENT, {
+          detail: payload,
+        })
+      );
+    };
+
+    emitCaptionState();
+  }, [activeCaptionIdx, captions.length]);
+
+  useEffect(() => {
+    const handleCaptionCommand = (event: Event) => {
+      const command = (event as CustomEvent<TvReceiverCommand>).detail;
+      if (!command || command.kind !== "caption" || command.action !== "set") {
+        return;
+      }
+
+      setActiveCaptionIdx(() => {
+        if (command.captionIndex < 0) return -1;
+        return command.captionIndex < captions.length ? command.captionIndex : -1;
+      });
+    };
+
+    window.addEventListener(
+      TV_PLAYER_CAPTION_COMMAND_EVENT,
+      handleCaptionCommand as EventListener
+    );
+    return () => {
+      window.removeEventListener(
+        TV_PLAYER_CAPTION_COMMAND_EVENT,
+        handleCaptionCommand as EventListener
+      );
+    };
+  }, [captions.length]);
   const currentEpisodeMeta = useMemo(
     () =>
       showNavigation?.episodes.find(
@@ -1107,6 +1165,8 @@ export default function VideoPlayer({
         ref={videoRef}
         className="h-full w-full"
         playsInline
+        // AirPlay — allow the browser to route playback to AirPlay targets
+        {...{ "x-webkit-airplay": "allow" }}
         onClick={handleVideoClick}
         onDoubleClick={handleDoubleClick}
       />
@@ -1270,6 +1330,13 @@ export default function VideoPlayer({
           subtitleDelay={subtitleDelay}
           hasEpisodeSelector={!!showNavigation}
           isEpisodeSelectorOpen={showEpisodePanel}
+          castAvailable={cast.available}
+          castConnected={cast.connected}
+          castConnecting={cast.connecting}
+          onCastToggle={cast.toggleCast}
+          airPlayAvailable={airPlay.available}
+          airPlayActive={airPlay.active}
+          onAirPlayToggle={airPlay.toggleAirPlay}
           onPlayPause={handlePlayPause}
           onSeek={handleSeek}
           onVolumeChange={handleVolumeChange}

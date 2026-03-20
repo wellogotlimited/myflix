@@ -22,6 +22,7 @@ import {
   posterUrl,
 } from "@/lib/tmdb";
 import MoodRows from "@/components/MoodRows";
+import TvHomeGate from "@/components/tv/TvHomeGate";
 import { requireProfile } from "@/lib/session";
 import { passesMaturityFilter } from "@/lib/maturity";
 
@@ -98,7 +99,8 @@ export default async function Home({
   }
 
   return (
-    <main className="min-h-screen">
+    <TvHomeGate>
+      <main className="min-h-screen">
       {/* Desktop hero */}
       {hero && (
         <div className="hidden md:block">
@@ -195,6 +197,7 @@ export default async function Home({
           </>
         )}
       </div>
-    </main>
+      </main>
+    </TvHomeGate>
   );
 }

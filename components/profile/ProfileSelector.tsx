@@ -14,7 +14,13 @@ interface Profile {
   hasPin?: boolean;
 }
 
-export default function ProfileSelector({ profiles }: { profiles: Profile[] }) {
+export default function ProfileSelector({
+  profiles,
+  callbackUrl,
+}: {
+  profiles: Profile[];
+  callbackUrl?: string | null;
+}) {
   const { update } = useSession();
   const router = useRouter();
   const [switching, setSwitching] = useState<string | null>(null);
@@ -31,7 +37,7 @@ export default function ProfileSelector({ profiles }: { profiles: Profile[] }) {
         throw new Error("Profile switch did not persist");
       }
 
-      window.location.replace("/");
+      window.location.replace(callbackUrl || "/");
     } catch {
       setError("Failed to open this profile. Try again.");
       setSwitching(null);

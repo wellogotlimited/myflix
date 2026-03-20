@@ -29,7 +29,6 @@ interface Props {
   onClose: () => void;
 }
 
-const POLL_INTERVAL = 2500;
 const DRIFT_THRESHOLD = 1.5;
 
 export default function WatchPartyPanel({
@@ -57,104 +56,88 @@ export default function WatchPartyPanel({
   const [joinError, setJoinError] = useState("");
   const [connectionError, setConnectionError] = useState(0);
   const [showJoin, setShowJoin] = useState(false);
+  const [leaving, setLeaving] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
+  const latestIsPlayingRef = useRef(isPlaying);
+  const latestOnPartyStateChangeRef = useRef(onPartyStateChange);
+  const latestOnSeekToRef = useRef(onSeekTo);
+  const latestOnSetPlayingRef = useRef(onSetPlaying);
+  const latestOnPartyEndedRef = useRef(onPartyEnded);
+  const latestIsHostRef = useRef(isHost);
+
+  useEffect(() => {
+    latestIsPlayingRef.current = isPlaying;
+    latestOnPartyStateChangeRef.current = onPartyStateChange;
+    latestOnSeekToRef.current = onSeekTo;
+    latestOnSetPlayingRef.current = onSetPlaying;
+    latestOnPartyEndedRef.current = onPartyEnded;
+    latestIsHostRef.current = isHost;
+  }, [isHost, isPlaying, onPartyEnded, onPartyStateChange, onSeekTo, onSetPlaying]);
 
   const applyPartyState = useCallback((data: WatchPartyState) => {
     setConnectionError(0);
     setPartyState(data);
-    onPartyStateChange(data);
+    latestOnPartyStateChangeRef.current(data);
 
-    if (!isHost) {
+    if (!latestIsHostRef.current) {
       const drift = data.positionSec - (playerPositionRef.current ?? 0);
       if (Math.abs(drift) > DRIFT_THRESHOLD) {
-        onSeekTo(data.positionSec);
+        latestOnSeekToRef.current(data.positionSec);
       }
-      if (data.isPlaying !== isPlaying) {
-        onSetPlaying(data.isPlaying);
+      if (data.isPlaying !== latestIsPlayingRef.current) {
+        latestOnSetPlayingRef.current(data.isPlaying);
       }
     }
-  }, [isHost, isPlaying, onPartyStateChange, onSeekTo, onSetPlaying, playerPositionRef]);
-
-  const fetchParty = useCallback(async (code: string) => {
-    try {
-      const res = await fetch(`/api/party/${code}`);
-      if (res.status === 404) {
-        onPartyStateChange(null);
-        onPartyEnded();
-        return;
-      }
-      if (!res.ok) {
-        setConnectionError((n) => n + 1);
-        return;
-      }
-
-      const data: WatchPartyState = await res.json();
-      applyPartyState(data);
-    } catch {
-      setConnectionError((n) => n + 1);
-    }
-  }, [applyPartyState, onPartyEnded, onPartyStateChange]);
+  }, [playerPositionRef]);
 
   useEffect(() => {
     if (!partyCode) {
-      onPartyStateChange(null);
+      latestOnPartyStateChangeRef.current(null);
       return;
     }
 
-    const initialFetch = setTimeout(() => {
-      void fetchParty(partyCode);
-    }, 0);
-
-    if (typeof window !== "undefined" && "EventSource" in window) {
-      const source = new EventSource(`/api/party/${partyCode}/events`);
-      eventSourceRef.current = source;
-
-      source.onopen = () => {
-        setConnectionError(0);
-        if (pollRef.current) {
-          clearInterval(pollRef.current);
-          pollRef.current = null;
-        }
-      };
-
-      source.addEventListener("state", (event) => {
-        const payload = JSON.parse((event as MessageEvent).data) as {
-          type: "state";
-          party: WatchPartyState;
-        };
-        applyPartyState(payload.party);
-      });
-
-      source.addEventListener("ended", () => {
-        source.close();
-        onPartyStateChange(null);
-        onPartyEnded();
-      });
-
-      source.onerror = () => {
-        setConnectionError((n) => n + 1);
-        if (!pollRef.current) {
-          pollRef.current = setInterval(() => {
-            void fetchParty(partyCode);
-          }, POLL_INTERVAL);
-        }
-      };
-    } else {
-      pollRef.current = setInterval(() => {
-        void fetchParty(partyCode);
-      }, POLL_INTERVAL);
+    if (typeof window === "undefined" || !("EventSource" in window)) {
+      return;
     }
 
+    const source = new EventSource(`/api/party/${partyCode}/events`);
+    eventSourceRef.current = source;
+
+    source.onopen = () => {
+      setConnectionError(0);
+    };
+
+    source.addEventListener("state", (event) => {
+      const payload = JSON.parse((event as MessageEvent).data) as {
+        type?: "state";
+        party?: WatchPartyState;
+      } | WatchPartyState;
+
+      if ("party" in payload && payload.party) {
+        applyPartyState(payload.party);
+        return;
+      }
+
+      applyPartyState(payload as WatchPartyState);
+    });
+
+    source.addEventListener("ended", () => {
+      source.close();
+      setPartyState(null);
+      latestOnPartyStateChangeRef.current(null);
+      latestOnPartyEndedRef.current();
+    });
+
+    source.onerror = () => {
+      setConnectionError((n) => n + 1);
+    };
+
     return () => {
-      clearTimeout(initialFetch);
       eventSourceRef.current?.close();
       eventSourceRef.current = null;
-      if (pollRef.current) clearInterval(pollRef.current);
-      pollRef.current = null;
     };
-  }, [applyPartyState, fetchParty, onPartyEnded, onPartyStateChange, partyCode]);
+  }, [applyPartyState, partyCode]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -196,6 +179,14 @@ export default function WatchPartyPanel({
   async function handleEndParty() {
     if (!partyCode) return;
     await fetch(`/api/party/${partyCode}`, { method: "DELETE" });
+    onPartyEnded();
+  }
+
+  async function handleLeaveParty() {
+    if (!partyCode) return;
+    setLeaving(true);
+    await fetch(`/api/party/${partyCode}/leave`, { method: "POST" }).catch(() => null);
+    setLeaving(false);
     onPartyEnded();
   }
 
@@ -282,12 +273,20 @@ export default function WatchPartyPanel({
             {connectionError >= 3 && (
               <p className="text-xs text-yellow-400">Connection issues...</p>
             )}
-            {isHost && (
+            {isHost ? (
               <button
                 onClick={handleEndParty}
                 className="w-full rounded border border-red-800 py-1.5 text-xs text-red-500 transition hover:border-red-500"
               >
                 End Party
+              </button>
+            ) : (
+              <button
+                onClick={handleLeaveParty}
+                disabled={leaving}
+                className="w-full rounded border border-white/15 py-1.5 text-xs text-white/75 transition hover:border-white/30 hover:text-white disabled:opacity-60"
+              >
+                {leaving ? "Leaving..." : "Leave Party"}
               </button>
             )}
           </div>

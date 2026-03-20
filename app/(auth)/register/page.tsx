@@ -1,9 +1,14 @@
+import { redirect } from "next/navigation";
+import { auth } from "@/lib/auth";
 import BrandWordmark from "@/components/BrandWordmark";
 import RegisterForm from "@/components/auth/RegisterForm";
 
 export const metadata = { title: "Create Account - Popflix" };
 
-export default function RegisterPage() {
+export default async function RegisterPage() {
+  const session = await auth();
+  if (session?.user?.accountId) redirect("/profiles");
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-black/80 bg-cover bg-center">
       <div className="w-full max-w-md rounded-md bg-black/80 px-12 py-12">

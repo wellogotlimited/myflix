@@ -21,10 +21,24 @@ import {
   type WatchPartyState,
 } from "@/lib/party";
 import { useProfileSession } from "@/lib/profile-session";
+import {
+  TV_RECEIVER_COMMAND_EVENT,
+  TV_PLAYER_CAPTION_COMMAND_EVENT,
+  TV_PLAYER_CAPTION_STATE_EVENT,
+  TV_RECEIVER_STORAGE_KEY,
+  TV_REMOTE_TARGET_STORAGE_KEY,
+  type TvReceiverCommand,
+  type TvPlayerCaptionStatePayload,
+  type TvReceiverStatusPayload,
+  readRemoteSettings,
+  readStorageValue,
+  writeStorageValue,
+} from "@/lib/tv-remote";
 import type { TMDBEpisode, TMDBSeason } from "@/lib/tmdb";
 import WatchPartyPanel from "./party/WatchPartyPanel";
 import VideoPlayer from "./player/VideoPlayer";
 import ProviderStatus, { SourceStatus } from "./ProviderStatus";
+import TvRemoteScreen from "./tv/TvRemoteScreen";
 import WatchErrorState from "./WatchErrorState";
 
 interface MediaInfo {
@@ -85,6 +99,21 @@ function mergePartyCodeIntoHref(href: string, partyCode: string | null) {
   return query ? `${pathname}?${query}` : pathname;
 }
 
+function getEstimatedReceiverTime(status: TvReceiverStatusPayload | null) {
+  if (!status) return 0;
+  if (!status.updatedAt || !status.isPlaying) {
+    return status.currentTimeSec;
+  }
+
+  const elapsed = (Date.now() - new Date(status.updatedAt).getTime()) / 1000;
+  const nextTime = status.currentTimeSec + Math.max(0, elapsed);
+  if (status.durationSec > 0) {
+    return Math.min(status.durationSec, nextTime);
+  }
+
+  return nextTime;
+}
+
 export default function WatchClient({
   media,
   title,
@@ -110,8 +139,14 @@ export default function WatchClient({
   const [activeShowNavigation, setActiveShowNavigation] = useState(showNavigation);
   const [resumePosition, setResumePosition] = useState<number | undefined>(undefined);
   const lastSaveRef = useRef(0);
-  const lastPartySyncRef = useRef(0);
+  const lastPartyPlaybackRef = useRef<{ code: string; playing: boolean } | null>(null);
+  const currentPartyCodeRef = useRef<string | null>(null);
+  const suppressPartyLeaveRef = useRef(false);
   const playerPositionRef = useRef(0);
+  const playerCaptionStateRef = useRef<TvPlayerCaptionStatePayload>({
+    captionsAvailable: false,
+    captionsEnabled: false,
+  });
   const [playerIsPlaying, setPlayerIsPlaying] = useState(false);
   const [partySeekTo, setPartySeekTo] = useState<{ position: number; nonce: number } | null>(null);
   const [partyPlayingState, setPartyPlayingState] = useState<{
@@ -126,6 +161,13 @@ export default function WatchClient({
   const [partyRole, setPartyRole] = useState<PartyRole>(initialPartyCode ? "guest" : null);
   const [partyState, setPartyState] = useState<WatchPartyState | null>(null);
   const [partyPanelOpen, setPartyPanelOpen] = useState(Boolean(initialPartyCode));
+  const [tvReceiverId, setTvReceiverId] = useState<string | null>(null);
+  const [remoteReceiverId, setRemoteReceiverId] = useState<string | null>(null);
+  const [remoteLaunchState, setRemoteLaunchState] = useState<"idle" | "sending" | "sent">("idle");
+  const [remoteLaunchError, setRemoteLaunchError] = useState<string | null>(null);
+  const [remoteReceiverStatus, setRemoteReceiverStatus] = useState<TvReceiverStatusPayload | null>(
+    null
+  );
 
   if (devMode && !debugSessionIdRef.current) {
     debugSessionIdRef.current = createDebugSessionId();
@@ -144,11 +186,23 @@ export default function WatchClient({
   }, [initialPartyCode]);
 
   useEffect(() => {
+    currentPartyCodeRef.current = partyCode;
+    if (partyCode) {
+      suppressPartyLeaveRef.current = false;
+    }
+  }, [partyCode]);
+
+  useEffect(() => {
     if (!devMode || !debugSessionIdRef.current) return;
 
     void resetNetworkDebug(debugSessionIdRef.current);
     return enableNetworkDebugCapture(debugSessionIdRef.current);
   }, [devMode]);
+
+  useEffect(() => {
+    setTvReceiverId(readStorageValue(TV_RECEIVER_STORAGE_KEY));
+    setRemoteReceiverId(readStorageValue(TV_REMOTE_TARGET_STORAGE_KEY));
+  }, []);
 
   const mediaKey = useMemo(
     () =>
@@ -205,6 +259,82 @@ export default function WatchClient({
       return query ? `${pathname}?${query}` : pathname;
     },
     [pathname, searchParams]
+  );
+  const remoteWatchPath = useMemo(() => {
+    const basePath = `/watch/${activeMedia.type === "movie" ? "movie" : "tv"}/${activeMedia.tmdbId}`;
+
+    if (activeMedia.type !== "show") {
+      return basePath;
+    }
+
+    const params = new URLSearchParams();
+    if (activeMedia.season?.number != null) {
+      params.set("season", String(activeMedia.season.number));
+    }
+    if (activeMedia.episode?.number != null) {
+      params.set("episode", String(activeMedia.episode.number));
+    }
+
+    const query = params.toString();
+    return query ? `${basePath}?${query}` : basePath;
+  }, [activeMedia]);
+  const syncReceiverStatus = useCallback(
+    async ({
+      currentTime,
+      duration,
+      isPlaying,
+    }: {
+      currentTime: number;
+      duration: number;
+      isPlaying: boolean;
+    }) => {
+      if (!tvReceiverId) return;
+
+      await fetch(`/api/tv/receiver/${tvReceiverId}/status`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          path: remoteWatchPath,
+          title: activeTitle,
+          captionsAvailable: playerCaptionStateRef.current.captionsAvailable,
+          captionsEnabled: playerCaptionStateRef.current.captionsEnabled,
+          captions: playerCaptionStateRef.current.captions,
+          activeCaptionIndex: playerCaptionStateRef.current.activeCaptionIndex,
+          isPlaying,
+          currentTimeSec: currentTime,
+          durationSec: duration,
+          mediaType: activeMedia.type === "movie" ? "movie" : "tv",
+          tmdbId: activeMedia.tmdbId,
+          seasonNumber: activeMedia.season?.number ?? null,
+          episodeNumber: activeMedia.episode?.number ?? null,
+        }),
+      }).catch(() => {});
+    },
+    [activeMedia, activeTitle, remoteWatchPath, tvReceiverId]
+  );
+  const sendRemoteCommand = useCallback(
+    async (command: TvReceiverCommand) => {
+      if (!remoteReceiverId) return;
+
+      const response = await fetch(`/api/tv/receiver/${remoteReceiverId}/command`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(command),
+      }).catch(() => null);
+
+      if (!response?.ok) {
+        writeStorageValue(TV_REMOTE_TARGET_STORAGE_KEY, null);
+        setRemoteReceiverId(null);
+        setRemoteLaunchState("idle");
+        setRemoteLaunchError("TV connection was lost. Playing on this device instead.");
+        throw new Error("Remote command failed");
+      }
+
+      if (command.kind === "navigate") {
+        setRemoteLaunchState("sent");
+      }
+    },
+    [remoteReceiverId]
   );
 
   const scrape = useCallback(
@@ -282,6 +412,12 @@ export default function WatchClient({
     [activeMedia]
   );
 
+  // Keep a stable ref to the latest scrape function so the scrape effect
+  // can call it without adding scrape to the deps (which would restart
+  // scraping on every router.replace, e.g. when joining a watch party).
+  const scrapeRef = useRef(scrape);
+  scrapeRef.current = scrape;
+
   const startScrape = useCallback(() => {
     const nextRequestId = requestIdRef.current + 1;
     requestIdRef.current = nextRequestId;
@@ -294,8 +430,23 @@ export default function WatchClient({
       return;
     }
 
-    router.push("/");
-  }, [router]);
+    router.push(tvReceiverId ? "/tv" : "/");
+  }, [router, tvReceiverId]);
+  const handleRemoteBack = useCallback(() => {
+    void sendRemoteCommand({
+      kind: "navigate",
+      path: "/tv",
+      title: "TV Remote",
+      settings: readRemoteSettings(),
+    }).finally(() => {
+      if (typeof window !== "undefined" && window.history.length > 1) {
+        router.back();
+        return;
+      }
+
+      router.push("/");
+    });
+  }, [router, sendRemoteCommand]);
 
   const handleEpisodeSelect = useCallback(
     ({
@@ -365,6 +516,14 @@ export default function WatchClient({
     [profileId]
   );
 
+  const handlePartySeekTo = useCallback((position: number) => {
+    setPartySeekTo({ position, nonce: Date.now() });
+  }, []);
+
+  const handlePartyPlayingUpdate = useCallback((playing: boolean) => {
+    setPartyPlayingState({ playing, nonce: Date.now() });
+  }, []);
+
   const handlePartyCreated = useCallback(
     ({
       code,
@@ -375,24 +534,30 @@ export default function WatchClient({
       role: "host" | "guest";
       state?: WatchPartyState;
     }) => {
+      suppressPartyLeaveRef.current = false;
+      currentPartyCodeRef.current = code;
+      lastPartyPlaybackRef.current = null;
       setPartyCode(code);
       setPartyRole(role);
       setPartyState(state ?? null);
       setPartyPanelOpen(true);
 
       if (state && role === "guest") {
-        setPartySeekTo({ position: state.positionSec, nonce: Date.now() });
-        setPartyPlayingState({ playing: state.isPlaying, nonce: Date.now() });
+        handlePartySeekTo(state.positionSec);
+        handlePartyPlayingUpdate(state.isPlaying);
       }
 
       startTransition(() => {
         router.replace(buildCurrentPartyHref(code), { scroll: false });
       });
     },
-    [buildCurrentPartyHref, router]
+    [buildCurrentPartyHref, handlePartyPlayingUpdate, handlePartySeekTo, router]
   );
 
   const handlePartyEnded = useCallback(() => {
+    suppressPartyLeaveRef.current = true;
+    currentPartyCodeRef.current = null;
+    lastPartyPlaybackRef.current = null;
     setPartyCode(null);
     setPartyRole(null);
     setPartyState(null);
@@ -404,18 +569,15 @@ export default function WatchClient({
     });
   }, [buildCurrentPartyHref, router]);
 
-  const syncPartyPlaybackState = useCallback((force = false) => {
+  const syncPartyPlaybackState = useCallback((isPlaying: boolean) => {
     if (!partyCode || !isPartyHost) return;
-    const now = Date.now();
-    if (!force && now - lastPartySyncRef.current < 750) return;
-    lastPartySyncRef.current = now;
 
     void fetch(`/api/party/${partyCode}/state`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         positionSec: playerPositionRef.current,
-        isPlaying: playerIsPlaying,
+        isPlaying,
         season: activeMedia.season?.number ?? null,
         episode: activeMedia.episode?.number ?? null,
       }),
@@ -425,8 +587,22 @@ export default function WatchClient({
     activeMedia.season?.number,
     isPartyHost,
     partyCode,
-    playerIsPlaying,
   ]);
+
+  const leaveParty = useCallback((code: string) => {
+    if (typeof navigator !== "undefined" && typeof navigator.sendBeacon === "function") {
+      const sent = navigator.sendBeacon(
+        `/api/party/${code}/leave`,
+        new Blob([], { type: "application/json" })
+      );
+      if (sent) return;
+    }
+
+    void fetch(`/api/party/${code}/leave`, {
+      method: "POST",
+      keepalive: true,
+    }).catch(() => {});
+  }, []);
 
   function handleEvent(requestId: number, event: string, data: unknown) {
     if (requestId !== requestIdRef.current) return;
@@ -492,35 +668,231 @@ export default function WatchClient({
   }, [mediaKey]);
 
   useEffect(() => {
+    if (!tvReceiverId) return;
+
+    const getVideo = () => document.querySelector("video") as HTMLVideoElement | null;
+    const handleCommand = (event: Event) => {
+      const nextCommand = (event as CustomEvent<TvReceiverCommand>).detail;
+      if (!nextCommand) return;
+
+      if (nextCommand.kind === "caption") {
+        window.dispatchEvent(
+          new CustomEvent(TV_PLAYER_CAPTION_COMMAND_EVENT, {
+            detail: nextCommand,
+          })
+        );
+        return;
+      }
+
+      if (nextCommand.kind !== "playback") return;
+
+      const video = getVideo();
+      if (!video) return;
+
+      switch (nextCommand.action) {
+        case "play":
+          if (video.paused) {
+            void video.play().catch(() => {});
+          }
+          break;
+        case "pause":
+          if (!video.paused) {
+            video.pause();
+          }
+          break;
+        case "toggle":
+          if (video.paused) {
+            void video.play().catch(() => {});
+          } else {
+            video.pause();
+          }
+          break;
+        case "seek":
+          if (typeof nextCommand.positionSec === "number") {
+            video.currentTime = nextCommand.positionSec;
+            playerPositionRef.current = nextCommand.positionSec;
+          }
+          break;
+      }
+    };
+
+    window.addEventListener(TV_RECEIVER_COMMAND_EVENT, handleCommand as EventListener);
+    return () => {
+      window.removeEventListener(TV_RECEIVER_COMMAND_EVENT, handleCommand as EventListener);
+    };
+  }, [tvReceiverId]);
+
+  useEffect(() => {
+    if (!tvReceiverId || remoteReceiverId) return;
+
+    const handleCaptionState = (event: Event) => {
+      const nextState = (event as CustomEvent<TvPlayerCaptionStatePayload>).detail;
+      playerCaptionStateRef.current = nextState;
+
+      const video = document.querySelector("video") as HTMLVideoElement | null;
+      if (!video) return;
+
+      void syncReceiverStatus({
+        currentTime: video.currentTime || 0,
+        duration: video.duration || 0,
+        isPlaying: !video.paused && !video.ended,
+      });
+    };
+
+    window.addEventListener(TV_PLAYER_CAPTION_STATE_EVENT, handleCaptionState as EventListener);
+    return () => {
+      window.removeEventListener(
+        TV_PLAYER_CAPTION_STATE_EVENT,
+        handleCaptionState as EventListener
+      );
+    };
+  }, [remoteReceiverId, syncReceiverStatus, tvReceiverId]);
+
+  useEffect(() => {
+    if (!tvReceiverId || remoteReceiverId) return;
+
+    const events: Array<keyof HTMLMediaElementEventMap> = [
+      "play",
+      "pause",
+      "seeked",
+      "durationchange",
+      "ended",
+    ];
+    let boundVideo: HTMLVideoElement | null = null;
+
+    const syncVideoState = () => {
+      const video = boundVideo;
+      if (!video) return;
+
+      playerPositionRef.current = video.currentTime || 0;
+      void syncReceiverStatus({
+        currentTime: video.currentTime || 0,
+        duration: video.duration || 0,
+        isPlaying: !video.paused && !video.ended,
+      });
+    };
+
+    const unbind = () => {
+      if (!boundVideo) return;
+      for (const eventName of events) {
+        boundVideo.removeEventListener(eventName, syncVideoState);
+      }
+      boundVideo = null;
+    };
+
+    const bind = () => {
+      const nextVideo = document.querySelector("video") as HTMLVideoElement | null;
+      if (!nextVideo || nextVideo === boundVideo) return;
+
+      unbind();
+      boundVideo = nextVideo;
+      for (const eventName of events) {
+        boundVideo.addEventListener(eventName, syncVideoState);
+      }
+      syncVideoState();
+    };
+
+    bind();
+    const bindTimer = window.setInterval(bind, 500);
+
+    return () => {
+      window.clearInterval(bindTimer);
+      unbind();
+    };
+  }, [remoteReceiverId, syncReceiverStatus, tvReceiverId]);
+
+  useEffect(() => {
+    if (!remoteReceiverId) {
+      setRemoteReceiverStatus(null);
+      return;
+    }
+
+    const eventSource = new EventSource(`/api/tv/receiver/${remoteReceiverId}/events`);
+    eventSource.addEventListener("status", (event) => {
+      const payload = JSON.parse((event as MessageEvent).data) as TvReceiverStatusPayload;
+      setRemoteReceiverStatus(payload);
+    });
+    eventSource.onerror = () => {
+      if (eventSource.readyState === EventSource.CLOSED) {
+        eventSource.close();
+      }
+    };
+
+    return () => {
+      eventSource.close();
+    };
+  }, [remoteReceiverId]);
+
+  useEffect(() => {
+    if (!remoteReceiverId) {
+      setRemoteLaunchState("idle");
+      setRemoteLaunchError(null);
+      return;
+    }
+
+    let cancelled = false;
+    setRemoteLaunchState("sending");
+    setRemoteLaunchError(null);
+
+    void sendRemoteCommand({
+      kind: "navigate",
+      path: remoteWatchPath,
+      title: activeTitle,
+      settings: readRemoteSettings(),
+    })
+      .then(() => {
+        if (cancelled) return;
+        setRemoteLaunchState("sent");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        writeStorageValue(TV_REMOTE_TARGET_STORAGE_KEY, null);
+        setRemoteReceiverId(null);
+        setRemoteLaunchState("idle");
+        setRemoteLaunchError("TV connection was lost. Playing on this device instead.");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTitle, remoteReceiverId, remoteWatchPath, sendRemoteCommand]);
+
+  useEffect(() => {
+    if (remoteReceiverId) return;
+
     if (!partyCode || !partyState || isPartyHost || partyMatchesActiveMedia) return;
 
     const nextHref = mergePartyCodeIntoHref(buildPartyWatchHref(partyState), partyCode);
     startTransition(() => {
       router.replace(nextHref, { scroll: false });
     });
-  }, [isPartyHost, partyCode, partyMatchesActiveMedia, partyState, router]);
+  }, [isPartyHost, partyCode, partyMatchesActiveMedia, partyState, remoteReceiverId, router]);
 
   useEffect(() => {
-    if (!partyCode || !isPartyHost) return;
+    if (remoteReceiverId) return;
 
-    syncPartyPlaybackState(true);
-    const interval = setInterval(() => syncPartyPlaybackState(true), 1500);
-    return () => clearInterval(interval);
-  }, [isPartyHost, partyCode, syncPartyPlaybackState]);
+    if (!partyCode || !isPartyHost) {
+      lastPartyPlaybackRef.current = null;
+      return;
+    }
+
+    const lastPlayback = lastPartyPlaybackRef.current;
+    if (!lastPlayback || lastPlayback.code !== partyCode) {
+      lastPartyPlaybackRef.current = { code: partyCode, playing: playerIsPlaying };
+      return;
+    }
+
+    if (lastPlayback.playing === playerIsPlaying) {
+      return;
+    }
+
+    lastPartyPlaybackRef.current = { code: partyCode, playing: playerIsPlaying };
+    syncPartyPlaybackState(playerIsPlaying);
+  }, [isPartyHost, partyCode, playerIsPlaying, remoteReceiverId, syncPartyPlaybackState]);
 
   useEffect(() => {
-    if (!partyCode || !isPartyHost) return;
-    syncPartyPlaybackState(true);
-  }, [
-    activeMedia.episode?.number,
-    activeMedia.season?.number,
-    isPartyHost,
-    partyCode,
-    playerIsPlaying,
-    syncPartyPlaybackState,
-  ]);
+    if (remoteReceiverId) return;
 
-  useEffect(() => {
     if (!profileId) return;
     setResumePosition(undefined);
 
@@ -545,9 +917,6 @@ export default function WatchClient({
   const handleProgressUpdate = useCallback(
     (currentTime: number, duration: number) => {
       playerPositionRef.current = currentTime;
-      if (partyCode && isPartyHost) {
-        syncPartyPlaybackState();
-      }
 
       if (!profileId) return;
       if (!duration || duration < 10) return;
@@ -572,10 +941,90 @@ export default function WatchClient({
         }),
       }).catch(() => {});
     },
-    [activeMedia, isPartyHost, partyCode, profileId, syncPartyPlaybackState]
+    [activeMedia, profileId]
+  );
+  const handleRemoteTogglePlay = useCallback(() => {
+    setRemoteReceiverStatus((current) =>
+      current
+        ? {
+            ...current,
+            isPlaying: !current.isPlaying,
+            updatedAt: new Date().toISOString(),
+          }
+        : current
+    );
+    void sendRemoteCommand({ kind: "playback", action: "toggle" });
+  }, [sendRemoteCommand]);
+  const handleRemoteSetCaption = useCallback((captionIndex: number) => {
+    setRemoteReceiverStatus((current) =>
+      current
+        ? {
+            ...current,
+            captionsEnabled: captionIndex >= 0,
+            activeCaptionIndex: captionIndex,
+          }
+        : current
+    );
+    void sendRemoteCommand({ kind: "caption", action: "set", captionIndex });
+  }, [sendRemoteCommand]);
+  const handleRemoteSeekTo = useCallback(
+    (positionSec: number) => {
+      const maxDuration = remoteReceiverStatus?.durationSec ?? 0;
+      const clamped =
+        maxDuration > 0
+          ? Math.max(0, Math.min(maxDuration, positionSec))
+          : Math.max(0, positionSec);
+
+      setRemoteReceiverStatus((current) =>
+        current
+          ? {
+              ...current,
+              currentTimeSec: clamped,
+              updatedAt: new Date().toISOString(),
+            }
+          : current
+      );
+
+      void sendRemoteCommand({
+        kind: "playback",
+        action: "seek",
+        positionSec: clamped,
+      });
+    },
+    [remoteReceiverStatus?.durationSec, sendRemoteCommand]
+  );
+  const handleRemoteSeekBy = useCallback(
+    (delta: number) => {
+      const nextPosition = getEstimatedReceiverTime(remoteReceiverStatus) + delta;
+      void handleRemoteSeekTo(nextPosition);
+    },
+    [handleRemoteSeekTo, remoteReceiverStatus]
   );
 
   useEffect(() => {
+    const handlePageHide = () => {
+      const currentPartyCode = currentPartyCodeRef.current;
+      if (!currentPartyCode || suppressPartyLeaveRef.current) return;
+
+      suppressPartyLeaveRef.current = true;
+      leaveParty(currentPartyCode);
+    };
+
+    window.addEventListener("pagehide", handlePageHide);
+    return () => {
+      window.removeEventListener("pagehide", handlePageHide);
+
+      const currentPartyCode = currentPartyCodeRef.current;
+      if (!currentPartyCode || suppressPartyLeaveRef.current) return;
+
+      suppressPartyLeaveRef.current = true;
+      leaveParty(currentPartyCode);
+    };
+  }, [leaveParty]);
+
+  useEffect(() => {
+    if (remoteReceiverId) return;
+
     return () => {
       if (!profileId) return;
       const video = document.querySelector("video");
@@ -599,19 +1048,42 @@ export default function WatchClient({
         new Blob([body], { type: "application/json" })
       );
     };
-  }, [activeMedia, profileId]);
+  }, [activeMedia, profileId, remoteReceiverId]);
 
   useEffect(() => {
+    if (remoteReceiverId) return;
+
     const nextRequestId = requestIdRef.current + 1;
     requestIdRef.current = nextRequestId;
     const controller = new AbortController();
 
-    scrape(nextRequestId, controller.signal);
+    scrapeRef.current(nextRequestId, controller.signal);
 
     return () => {
       controller.abort();
     };
-  }, [mediaKey, scrape]);
+  }, [mediaKey, remoteReceiverId]); // intentionally omit scrape — use scrapeRef to avoid restarting on every router.replace
+
+  if (remoteReceiverId) {
+    return (
+      <TvRemoteScreen
+        title={activeTitle}
+        subtitle={activeSubtitle}
+        posterPath={activeMedia.posterPath}
+        backdropPath={activeMedia.backdropPath}
+        showNavigation={activeShowNavigation}
+        remoteStatus={remoteReceiverStatus}
+        launchState={remoteLaunchState}
+        error={remoteLaunchError}
+        onBack={handleRemoteBack}
+        onTogglePlay={handleRemoteTogglePlay}
+        onSetCaption={handleRemoteSetCaption}
+        onSeekBy={handleRemoteSeekBy}
+        onSeekTo={handleRemoteSeekTo}
+        onEpisodeSelect={handleEpisodeSelect}
+      />
+    );
+  }
 
   return (
     <div className="relative h-screen w-full bg-black">
@@ -639,7 +1111,7 @@ export default function WatchClient({
           sources={sources}
           onRetry={startScrape}
           onBack={handleExitWatch}
-          onHome={() => router.push("/")}
+          onHome={() => router.push(tvReceiverId ? "/tv" : "/")}
         />
       ) : (
         <ProviderStatus
@@ -686,12 +1158,8 @@ export default function WatchClient({
               isHost={isPartyHost}
               playerPositionRef={playerPositionRef}
               isPlaying={playerIsPlaying}
-              onSeekTo={(position) =>
-                setPartySeekTo({ position, nonce: Date.now() })
-              }
-              onSetPlaying={(playing) =>
-                setPartyPlayingState({ playing, nonce: Date.now() })
-              }
+              onSeekTo={handlePartySeekTo}
+              onSetPlaying={handlePartyPlayingUpdate}
               onPartyCreated={handlePartyCreated}
               onPartyStateChange={handlePartyStateChange}
               onPartyEnded={handlePartyEnded}

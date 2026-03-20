@@ -23,6 +23,32 @@ import ProgressBar from "./ProgressBar";
 import type { CaptionTrack } from "./VideoPlayer";
 import { formatTime, SPEED_OPTIONS } from "./utils";
 
+// ── Inline SVG icons for Cast / AirPlay ────────────────────────────────────
+
+function ChromecastIcon({ size = 28, active = false }: { size?: number; active?: boolean }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <path d="M2 16.1A5 5 0 0 1 5.9 20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path d="M2 12.05A9 9 0 0 1 9.95 20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path d="M2 8A13 13 0 0 1 14 20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <rect x="2" y="3" width="20" height="14" rx="2" stroke="currentColor" strokeWidth="2" fill={active ? "currentColor" : "none"} fillOpacity={active ? 0.2 : 0} />
+      <path d="M8 21h8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function AirPlayIcon({ size = 28, active = false }: { size?: number; active?: boolean }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <rect x="2" y="3" width="20" height="13" rx="2" stroke="currentColor" strokeWidth="2" fill={active ? "currentColor" : "none"} fillOpacity={active ? 0.2 : 0} />
+      <path d="M12 17 L7 22 L17 22 Z" fill="currentColor" stroke="currentColor" strokeWidth="1" strokeLinejoin="round" />
+      <path d="M12 7 L12 13 M9.5 9.5 L12 7 L14.5 9.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+
 type SettingsView = "main" | "quality" | "speed" | "captions";
 
 interface ControlsProps {
@@ -42,6 +68,15 @@ interface ControlsProps {
   subtitleDelay: number;
   hasEpisodeSelector?: boolean;
   isEpisodeSelectorOpen?: boolean;
+  // Chromecast
+  castAvailable?: boolean;
+  castConnected?: boolean;
+  castConnecting?: boolean;
+  onCastToggle?: () => void;
+  // AirPlay
+  airPlayAvailable?: boolean;
+  airPlayActive?: boolean;
+  onAirPlayToggle?: () => void;
   onPlayPause: () => void;
   onSeek: (time: number) => void;
   onVolumeChange: (vol: number) => void;
@@ -73,6 +108,13 @@ export default function Controls(props: ControlsProps) {
     subtitleDelay,
     hasEpisodeSelector,
     isEpisodeSelectorOpen,
+    castAvailable,
+    castConnected,
+    castConnecting,
+    onCastToggle,
+    airPlayAvailable,
+    airPlayActive,
+    onAirPlayToggle,
     onPlayPause,
     onSeek,
     onVolumeChange,
@@ -287,6 +329,43 @@ export default function Controls(props: ControlsProps) {
                 />
               )}
             </div>
+
+            {/* AirPlay button — shown on Safari/iOS or when Remote Playback API is available */}
+            {airPlayAvailable && onAirPlayToggle && (
+              <button
+                onClick={onAirPlayToggle}
+                className={`rounded-full p-2 transition-colors ${
+                  airPlayActive
+                    ? "bg-blue-500/20 text-blue-300 hover:bg-blue-500/25"
+                    : "text-white hover:bg-white/10 hover:text-white"
+                }`}
+                title={airPlayActive ? "Stop AirPlay" : "AirPlay"}
+              >
+                <AirPlayIcon size={27} active={airPlayActive} />
+              </button>
+            )}
+
+            {/* Chromecast button — shown when Cast SDK detects available devices */}
+            {castAvailable && onCastToggle && (
+              <button
+                onClick={onCastToggle}
+                disabled={castConnecting}
+                className={`rounded-full p-2 transition-colors disabled:opacity-50 ${
+                  castConnected
+                    ? "bg-blue-500/20 text-blue-300 hover:bg-blue-500/25"
+                    : "text-white hover:bg-white/10 hover:text-white"
+                }`}
+                title={
+                  castConnecting
+                    ? "Connecting…"
+                    : castConnected
+                      ? "Stop casting"
+                      : "Cast to TV"
+                }
+              >
+                <ChromecastIcon size={27} active={castConnected || castConnecting} />
+              </button>
+            )}
 
             {typeof document !== "undefined" && "pictureInPictureEnabled" in document && (
               <button

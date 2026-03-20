@@ -13,7 +13,6 @@ const uri = getMongoUri();
 const dbName = process.env.MONGODB_DB ?? "myflix";
 
 declare global {
-  // eslint-disable-next-line no-var
   var _mongooseConnection: Promise<typeof mongoose> | undefined;
 }
 
@@ -112,13 +111,67 @@ export interface WatchPartyDoc {
   createdAt: Date;
 }
 
-interface AccountFields extends Omit<AccountDoc, "_id"> {}
-interface ProfileFields extends Omit<ProfileDoc, "_id"> {}
-interface BookmarkFields extends Omit<BookmarkDoc, "_id"> {}
-interface WatchProgressFields extends Omit<WatchProgressDoc, "_id"> {}
-interface WatchHistoryFields extends Omit<WatchHistoryDoc, "_id"> {}
-interface GenreAffinityFields extends Omit<GenreAffinityDoc, "_id"> {}
-interface WatchPartyFields extends Omit<WatchPartyDoc, "_id"> {}
+export interface DevicePairingDoc {
+  _id: string;
+  token: string;
+  status: "pending" | "approved" | "consumed";
+  accountId?: string | null;
+  profileId?: string | null;
+  profileName?: string | null;
+  maturityLevel?: string | null;
+  exchangeToken?: string | null;
+  approvedAt?: Date | null;
+  consumedAt?: Date | null;
+  createdAt: Date;
+  expiresAt: Date;
+}
+
+export interface TvReceiverDoc {
+  _id: string;
+  accountId: string;
+  profileId: string;
+  profileName: string;
+  maturityLevel: "KIDS" | "TEEN" | "ADULT";
+  pairedAt: Date;
+  lastSeenAt: Date;
+  commandNonce?: string | null;
+  commandKind?: "navigate" | "playback" | "caption" | null;
+  commandPath?: string | null;
+  commandTitle?: string | null;
+  commandDevMode?: boolean | null;
+  commandProxyEnabled?: boolean | null;
+  commandAction?: "play" | "pause" | "toggle" | "seek" | null;
+  commandCaptionAction?: "set" | null;
+  commandCaptionIndex?: number | null;
+  commandPositionSec?: number | null;
+  commandSentAt?: Date | null;
+  statusNonce?: string | null;
+  statusPath?: string | null;
+  statusTitle?: string | null;
+  statusRemoteConnected?: boolean | null;
+  statusCaptionsAvailable?: boolean | null;
+  statusCaptionsEnabled?: boolean | null;
+  statusCaptions?: Array<{ index: number; label: string }> | null;
+  statusActiveCaptionIndex?: number | null;
+  statusIsPlaying?: boolean | null;
+  statusCurrentTimeSec?: number | null;
+  statusDurationSec?: number | null;
+  statusMediaType?: "movie" | "tv" | null;
+  statusTmdbId?: string | null;
+  statusSeasonNumber?: number | null;
+  statusEpisodeNumber?: number | null;
+  statusUpdatedAt?: Date | null;
+}
+
+type AccountFields = Omit<AccountDoc, "_id">;
+type ProfileFields = Omit<ProfileDoc, "_id">;
+type BookmarkFields = Omit<BookmarkDoc, "_id">;
+type WatchProgressFields = Omit<WatchProgressDoc, "_id">;
+type WatchHistoryFields = Omit<WatchHistoryDoc, "_id">;
+type GenreAffinityFields = Omit<GenreAffinityDoc, "_id">;
+type WatchPartyFields = Omit<WatchPartyDoc, "_id">;
+type DevicePairingFields = Omit<DevicePairingDoc, "_id">;
+type TvReceiverFields = Omit<TvReceiverDoc, "_id">;
 
 const accountSchema = new Schema<AccountFields>(
   {
@@ -241,6 +294,79 @@ const watchPartySchema = new Schema<WatchPartyFields>(
 );
 watchPartySchema.index({ createdAt: 1 }, { expireAfterSeconds: 86400 });
 
+const devicePairingSchema = new Schema<DevicePairingFields>(
+  {
+    token: { type: String, required: true, unique: true },
+    status: {
+      type: String,
+      enum: ["pending", "approved", "consumed"],
+      required: true,
+      default: "pending",
+    },
+    accountId: { type: String, default: null },
+    profileId: { type: String, default: null },
+    profileName: { type: String, default: null },
+    maturityLevel: { type: String, enum: ["KIDS", "TEEN", "ADULT"], default: null },
+    exchangeToken: { type: String, default: null },
+    approvedAt: { type: Date, default: null },
+    consumedAt: { type: Date, default: null },
+    createdAt: { type: Date, required: true },
+    expiresAt: { type: Date, required: true },
+  },
+  { versionKey: false }
+);
+devicePairingSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+
+const tvReceiverSchema = new Schema<TvReceiverFields>(
+  {
+    accountId: { type: String, required: true, index: true },
+    profileId: { type: String, required: true },
+    profileName: { type: String, required: true },
+    maturityLevel: { type: String, enum: ["KIDS", "TEEN", "ADULT"], required: true },
+    pairedAt: { type: Date, required: true },
+    lastSeenAt: { type: Date, required: true, index: true },
+    commandNonce: { type: String, default: null },
+    commandKind: { type: String, enum: ["navigate", "playback", "caption"], default: null },
+    commandPath: { type: String, default: null },
+    commandTitle: { type: String, default: null },
+    commandDevMode: { type: Boolean, default: null },
+    commandProxyEnabled: { type: Boolean, default: null },
+    commandAction: { type: String, enum: ["play", "pause", "toggle", "seek"], default: null },
+    commandCaptionAction: { type: String, enum: ["set"], default: null },
+    commandCaptionIndex: { type: Number, default: null },
+    commandPositionSec: { type: Number, default: null },
+    commandSentAt: { type: Date, default: null },
+    statusNonce: { type: String, default: null },
+    statusPath: { type: String, default: null },
+    statusTitle: { type: String, default: null },
+    statusRemoteConnected: { type: Boolean, default: false },
+    statusCaptionsAvailable: { type: Boolean, default: false },
+    statusCaptionsEnabled: { type: Boolean, default: false },
+    statusCaptions: {
+      type: [
+        new Schema(
+          {
+            index: { type: Number, required: true },
+            label: { type: String, required: true },
+          },
+          { _id: false, versionKey: false }
+        ),
+      ],
+      default: [],
+    },
+    statusActiveCaptionIndex: { type: Number, default: -1 },
+    statusIsPlaying: { type: Boolean, default: null },
+    statusCurrentTimeSec: { type: Number, default: null },
+    statusDurationSec: { type: Number, default: null },
+    statusMediaType: { type: String, enum: ["movie", "tv"], default: null },
+    statusTmdbId: { type: String, default: null },
+    statusSeasonNumber: { type: Number, default: null },
+    statusEpisodeNumber: { type: Number, default: null },
+    statusUpdatedAt: { type: Date, default: null },
+  },
+  { versionKey: false }
+);
+
 function getModel<T>(name: string, schema: Schema<T>, collection: string): Model<T> {
   return (models[name] as Model<T> | undefined) ?? model<T>(name, schema, collection);
 }
@@ -252,6 +378,8 @@ export const WatchProgressModel = getModel("WatchProgress", watchProgressSchema,
 export const WatchHistoryModel = getModel("WatchHistory", watchHistorySchema, "watchHistory");
 export const GenreAffinityModel = getModel("GenreAffinity", genreAffinitySchema, "genreAffinities");
 export const WatchPartyModel = getModel("WatchParty", watchPartySchema, "watchParties");
+export const DevicePairingModel = getModel("DevicePairing", devicePairingSchema, "devicePairings");
+export const TvReceiverModel = getModel("TvReceiver", tvReceiverSchema, "tvReceivers");
 
 export async function connectToDatabase() {
   globalThis._mongooseConnection ??= mongoose.connect(uri, { dbName });
