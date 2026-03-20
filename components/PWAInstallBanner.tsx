@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
+import { isIOS, isSafari } from "react-device-detect";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -12,24 +13,6 @@ type BannerMode = "ios" | "prompt" | null;
 
 const IOS_DISMISS_KEY = "pwa-install-dismissed-ios";
 const PROMPT_DISMISS_KEY = "pwa-install-dismissed-prompt";
-
-function isIosDevice() {
-  if (typeof navigator === "undefined") return false;
-
-  const userAgent = navigator.userAgent;
-  const platform = navigator.platform;
-  const touchMac = platform === "MacIntel" && navigator.maxTouchPoints > 1;
-
-  return /iPad|iPhone|iPod/.test(userAgent) || touchMac;
-}
-
-function isSafariBrowser() {
-  if (typeof navigator === "undefined") return false;
-
-  const userAgent = navigator.userAgent;
-
-  return /Safari/i.test(userAgent) && !/CriOS|FxiOS|EdgiOS|OPiOS|DuckDuckGo|Chrome|Firefox|Edg/i.test(userAgent);
-}
 
 function isStandalone() {
   if (typeof window === "undefined") return false;
@@ -71,7 +54,7 @@ export default function PWAInstallBanner() {
         return;
       }
 
-      if (isIosDevice()) {
+      if (isIOS) {
         if (!localStorage.getItem(IOS_DISMISS_KEY)) {
           setBannerMode("ios");
         }
@@ -122,7 +105,7 @@ export default function PWAInstallBanner() {
   const title = bannerMode === "ios" ? "Install on iOS" : "Add to Home Screen";
   const description =
     bannerMode === "ios"
-      ? isSafariBrowser()
+      ? isSafari
         ? "Tap Share, then Add to Home Screen. It only takes a second."
         : "Tap Share, then Add to Home Screen. It only takes a second. If you do not see it here, open Popflix in Safari."
       : "Install Popflix for quick access. It only takes a second.";
