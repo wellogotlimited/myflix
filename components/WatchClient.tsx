@@ -146,6 +146,8 @@ export default function WatchClient({
   const playerCaptionStateRef = useRef<TvPlayerCaptionStatePayload>({
     captionsAvailable: false,
     captionsEnabled: false,
+    captions: [],
+    activeCaptionIndex: -1,
   });
   const [playerIsPlaying, setPlayerIsPlaying] = useState(false);
   const [partySeekTo, setPartySeekTo] = useState<{ position: number; nonce: number } | null>(null);
@@ -213,7 +215,7 @@ export default function WatchClient({
   );
 
   const activeTitle = useMemo(
-    () => (activeMedia.type === "movie" ? title : activeMedia.title),
+    () => (activeMedia.type === "movie" ? title ?? activeMedia.title : activeMedia.title),
     [activeMedia, title]
   );
   const activeSubtitle = useMemo(

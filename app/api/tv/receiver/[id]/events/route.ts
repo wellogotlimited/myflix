@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { connectToDatabase, TvReceiverModel } from "@/lib/db";
+import type { TvReceiverDoc } from "@/lib/db";
 import type { TvReceiverStatusPayload } from "@/lib/tv-remote";
 
 export const dynamic = "force-dynamic";
@@ -9,10 +10,27 @@ function encodeSse(event: string, data: unknown) {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 }
 
+type TvReceiverStatusSource = Pick<
+  TvReceiverDoc,
+  | "statusPath"
+  | "statusTitle"
+  | "statusRemoteConnected"
+  | "statusCaptionsAvailable"
+  | "statusCaptionsEnabled"
+  | "statusCaptions"
+  | "statusActiveCaptionIndex"
+  | "statusIsPlaying"
+  | "statusCurrentTimeSec"
+  | "statusDurationSec"
+  | "statusMediaType"
+  | "statusTmdbId"
+  | "statusSeasonNumber"
+  | "statusEpisodeNumber"
+  | "statusUpdatedAt"
+>;
+
 function buildStatusPayload(
-  receiver: Awaited<ReturnType<(typeof TvReceiverModel)["findById"]>> extends { lean(): Promise<infer T> }
-    ? T
-    : never
+  receiver: TvReceiverStatusSource | null | undefined
 ): TvReceiverStatusPayload {
   return {
     path: receiver?.statusPath ?? null,

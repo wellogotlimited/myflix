@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import localFont from "next/font/local";
 import Script from "next/script";
 import Navbar from "@/components/Navbar";
@@ -69,7 +70,9 @@ export default function RootLayout({
       <body className={`${netflixSans.variable} antialiased bg-[#141414] text-white`}>
         <Providers>
           <OnboardingGuard />
-          <TvReceiverBridge />
+          <Suspense fallback={null}>
+            <TvReceiverBridge />
+          </Suspense>
           <div className="hidden md:block">
             <Navbar />
           </div>

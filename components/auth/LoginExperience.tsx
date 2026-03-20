@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import QRCode from "react-qr-code";
 import BrandWordmark from "@/components/BrandWordmark";
 import LoginForm from "@/components/auth/LoginForm";
@@ -161,7 +161,9 @@ export default function LoginExperience() {
           textClassName="text-2xl font-bold tracking-wide text-white"
         />
         <h1 className="mb-8 text-3xl font-bold text-white">Sign In</h1>
-        <LoginForm />
+        <Suspense fallback={null}>
+          <LoginForm />
+        </Suspense>
         <p className="mt-6 text-sm text-gray-400">
           New to Popflix?{" "}
           <a href="/register" className="text-white hover:underline">

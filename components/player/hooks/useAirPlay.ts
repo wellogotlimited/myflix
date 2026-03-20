@@ -3,12 +3,11 @@
 import { useCallback, useEffect, useState } from "react";
 
 // WebKit / Remote Playback API type extensions
-interface WebKitVideo extends HTMLVideoElement {
+type WebKitVideo = HTMLVideoElement & {
   webkitShowPlaybackTargetPicker?: () => void;
   webkitCurrentPlaybackTargetIsWireless?: boolean;
   webkitPresentationMode?: "inline" | "fullscreen" | "picture-in-picture";
-  remote?: RemotePlayback;
-}
+};
 
 interface WebKitPlaybackTargetAvailabilityEvent extends Event {
   availability: "available" | "not-available";
