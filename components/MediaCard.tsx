@@ -146,8 +146,10 @@ export default function MediaCard({
               className="object-cover"
             />
             {showNewBadge && (
-              <div className="absolute left-1.5 top-1.5 rounded bg-red-600 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white shadow-md">
-                New
+              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent pb-1.5 pt-4 text-center">
+                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[#e50914]">
+                  New
+                </span>
               </div>
             )}
           </div>
