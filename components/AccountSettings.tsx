@@ -12,7 +12,16 @@ export default function AccountSettings({ email }: { email: string }) {
   const [saving, setSaving] = useState(false);
   const [devices, setDevices] = useState<Array<{ _id: string; sessionKey: string; label: string; lastSeenAt: string; trusted: boolean; lastPath?: string | null }>>([]);
   const [notifications, setNotifications] = useState<Array<{ _id: string; title: string; body: string; createdAt: string; readAt?: string | null }>>([]);
-  const [downloads, setDownloads] = useState<Array<{ _id: string; title: string; status: string; reason?: string | null }>>([]);
+  const [downloads, setDownloads] = useState<Array<{
+    _id: string;
+    title: string;
+    status: string;
+    progressPct?: number;
+    reason?: string | null;
+    seasonNumber?: number | null;
+    episodeNumber?: number | null;
+    episodeTitle?: string | null;
+  }>>([]);
   const [activity, setActivity] = useState<{
     history: Array<{ _id: string; tmdbId: number; mediaType: string; watchedAt?: string }>;
     ratings: Array<{ _id: string; tmdbId: number; mediaType: string; rating: string }>;
@@ -255,11 +264,23 @@ export default function AccountSettings({ email }: { email: string }) {
           <div className="space-y-3">
             {downloads.length > 0 ? downloads.map((download) => (
               <div key={download._id} className="rounded border border-white/10 bg-white/[0.03] px-4 py-3">
-                <p className="text-sm font-medium text-white">{download.title}</p>
+                <p className="text-sm font-medium text-white">
+                  {download.title}
+                  {download.seasonNumber && download.episodeNumber
+                    ? ` S${download.seasonNumber}:E${download.episodeNumber}`
+                    : ""}
+                </p>
+                {download.episodeTitle ? (
+                  <p className="mt-1 text-xs text-white/40">{download.episodeTitle}</p>
+                ) : null}
                 <p className="mt-1 text-xs text-white/45">
                   {download.status === "unsupported"
                     ? download.reason || "Not supported in this browser yet."
-                    : `Status: ${download.status}`}
+                    : download.status === "downloading"
+                      ? `Downloading ${download.progressPct ?? 0}%`
+                      : download.status === "completed"
+                        ? "Available offline on the device that downloaded it."
+                        : `Status: ${download.status}`}
                 </p>
               </div>
             )) : (

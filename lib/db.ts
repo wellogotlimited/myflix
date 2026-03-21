@@ -323,6 +323,9 @@ export interface DownloadJobDoc {
   mediaType: "movie" | "tv";
   title: string;
   posterPath?: string | null;
+  seasonNumber?: number | null;
+  episodeNumber?: number | null;
+  episodeTitle?: string | null;
   status: "queued" | "downloading" | "paused" | "completed" | "failed" | "unsupported";
   progressPct: number;
   reason?: string | null;
@@ -766,6 +769,9 @@ const downloadJobSchema = new Schema<DownloadJobFields>(
     mediaType: { type: String, enum: ["movie", "tv"], required: true },
     title: { type: String, required: true },
     posterPath: { type: String, default: null },
+    seasonNumber: { type: Number, default: null },
+    episodeNumber: { type: Number, default: null },
+    episodeTitle: { type: String, default: null },
     status: {
       type: String,
       enum: ["queued", "downloading", "paused", "completed", "failed", "unsupported"],
@@ -779,7 +785,10 @@ const downloadJobSchema = new Schema<DownloadJobFields>(
   },
   { versionKey: false }
 );
-downloadJobSchema.index({ profileId: 1, tmdbId: 1, mediaType: 1 }, { unique: true });
+downloadJobSchema.index(
+  { profileId: 1, tmdbId: 1, mediaType: 1, seasonNumber: 1, episodeNumber: 1 },
+  { unique: true }
+);
 
 const socialFollowSchema = new Schema<SocialFollowFields>(
   {

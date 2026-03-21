@@ -1,4 +1,5 @@
 const CACHE = "popflix";
+const OFFLINE_MEDIA_CACHE = "popflix-offline-media-v1";
 
 // Static assets to pre-cache on install
 const PRECACHE = ["/offline.html", "/manifest.json"];
@@ -14,7 +15,11 @@ self.addEventListener("activate", (event) => {
   // Remove old caches
   event.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
+      Promise.all(
+        keys
+          .filter((k) => k !== CACHE && k !== OFFLINE_MEDIA_CACHE)
+          .map((k) => caches.delete(k))
+      )
     )
   );
   self.clients.claim();
@@ -30,6 +35,17 @@ self.addEventListener("fetch", (event) => {
     url.pathname.startsWith("/api/") ||
     url.pathname.startsWith("/_next/")
   ) {
+    return;
+  }
+
+  if (url.pathname.startsWith("/offline-media/")) {
+    event.respondWith(
+      caches.open(OFFLINE_MEDIA_CACHE).then(async (cache) => {
+        const cached = await cache.match(request);
+        if (cached) return cached;
+        return new Response("Offline file not found.", { status: 404 });
+      })
+    );
     return;
   }
 

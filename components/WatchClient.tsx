@@ -34,6 +34,11 @@ import {
   writeStorageValue,
 } from "@/lib/tv-remote";
 import type { TMDBEpisode, TMDBSeason } from "@/lib/tmdb";
+import {
+  OFFLINE_DOWNLOAD_CHANGE_EVENT,
+  getOfflinePlayback,
+  type OfflineMediaRequest,
+} from "@/lib/offline-downloads";
 import WatchPartyPanel from "./party/WatchPartyPanel";
 import VideoPlayer from "./player/VideoPlayer";
 import ProviderStatus, { SourceStatus } from "./ProviderStatus";
@@ -130,6 +135,7 @@ export default function WatchClient({
     typeof window !== "undefined" && localStorage.getItem("myflix-dev-mode") === "true"
   );
   const [stream, setStream] = useState<StreamResult | null>(null);
+  const [offlineStream, setOfflineStream] = useState<StreamResult | null>(null);
   const [sources, setSources] = useState<SourceStatus[]>([]);
   const [error, setError] = useState<string | null>(null);
   const requestIdRef = useRef(0);
@@ -169,6 +175,7 @@ export default function WatchClient({
   const [remoteReceiverStatus, setRemoteReceiverStatus] = useState<TvReceiverStatusPayload | null>(
     null
   );
+  const offlineStreamRef = useRef<StreamResult | null>(null);
 
   if (devMode && !debugSessionIdRef.current) {
     debugSessionIdRef.current = createDebugSessionId();
@@ -178,6 +185,39 @@ export default function WatchClient({
     setActiveMedia(media);
     setActiveShowNavigation(showNavigation);
   }, [media, showNavigation]);
+
+  useEffect(() => {
+    const syncOfflineStream = () => {
+      const request: OfflineMediaRequest =
+        activeMedia.type === "movie"
+          ? {
+              tmdbId: Number(activeMedia.tmdbId),
+              mediaType: "movie",
+              title: activeMedia.title,
+            }
+          : {
+              tmdbId: Number(activeMedia.tmdbId),
+              mediaType: "tv",
+              title: activeMedia.title,
+              seasonNumber: activeMedia.season?.number ?? null,
+              episodeNumber: activeMedia.episode?.number ?? null,
+            };
+
+      setOfflineStream(getOfflinePlayback(request) as StreamResult | null);
+    };
+
+    syncOfflineStream();
+    window.addEventListener(OFFLINE_DOWNLOAD_CHANGE_EVENT, syncOfflineStream);
+    window.addEventListener("storage", syncOfflineStream);
+    return () => {
+      window.removeEventListener(OFFLINE_DOWNLOAD_CHANGE_EVENT, syncOfflineStream);
+      window.removeEventListener("storage", syncOfflineStream);
+    };
+  }, [activeMedia]);
+
+  useEffect(() => {
+    offlineStreamRef.current = offlineStream;
+  }, [offlineStream]);
 
   useEffect(() => {
     if (!initialPartyCode) return;
@@ -407,6 +447,11 @@ export default function WatchClient({
         }
       } catch (err) {
         if (signal?.aborted) return;
+        if (offlineStreamRef.current) {
+          setError(null);
+          setStream(offlineStreamRef.current);
+          return;
+        }
         setError(err instanceof Error ? err.message : "Scraping failed");
       }
     },
@@ -658,7 +703,12 @@ export default function WatchClient({
         break;
       }
       case "error": {
-        setError((d.message as string) || "No working sources found.");
+        if (offlineStreamRef.current) {
+          setError(null);
+          setStream(offlineStreamRef.current);
+        } else {
+          setError((d.message as string) || "No working sources found.");
+        }
         break;
       }
     }
@@ -1054,6 +1104,13 @@ export default function WatchClient({
   useEffect(() => {
     if (remoteReceiverId) return;
 
+    if (offlineStream && typeof navigator !== "undefined" && !navigator.onLine) {
+      setStream(offlineStream);
+      setError(null);
+      setSources([]);
+      return;
+    }
+
     const nextRequestId = requestIdRef.current + 1;
     requestIdRef.current = nextRequestId;
     const controller = new AbortController();
@@ -1063,7 +1120,7 @@ export default function WatchClient({
     return () => {
       controller.abort();
     };
-  }, [mediaKey, remoteReceiverId]); // intentionally omit scrape — use scrapeRef to avoid restarting on every router.replace
+  }, [mediaKey, offlineStream, remoteReceiverId]); // intentionally omit scrape — use scrapeRef to avoid restarting on every router.replace
 
   if (remoteReceiverId) {
     return (

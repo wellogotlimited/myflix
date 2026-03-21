@@ -8,6 +8,8 @@ import {
   CaretDown,
   CaretLeft,
   CaretRight,
+  Check,
+  CircleNotch,
   DownloadSimple,
   Play,
   SpeakerSimpleHigh,
@@ -30,6 +32,13 @@ import {
   type TMDBEpisode,
   type TMDBItem,
 } from "@/lib/tmdb";
+import {
+  isOfflineDownloadSupported,
+  removeOfflineDownload,
+  startOfflineDownload,
+  useOfflineDownloadStatus,
+  type OfflineMediaRequest,
+} from "@/lib/offline-downloads";
 
 function formatRuntime(minutes: number | null | undefined) {
   if (!minutes) return null;
@@ -64,7 +73,7 @@ export default function MediaDetailsModal({
   const [episodesError, setEpisodesError] = useState<string | null>(null);
   const [episodePage, setEpisodePage] = useState(0);
   const [mobileTab, setMobileTab] = useState(0);
-  const [downloadQueued, setDownloadQueued] = useState(false);
+  const [downloadActionBusy, setDownloadActionBusy] = useState(false);
   const episodeCacheRef = useRef<Record<number, TMDBEpisode[]>>({});
 
   const type = getMediaType(activeItem);
@@ -79,28 +88,6 @@ export default function MediaDetailsModal({
   useEffect(() => {
     setHeaderMuted(true);
   }, [activeItem.id]);
-
-  useEffect(() => {
-    if (!open) return;
-    let cancelled = false;
-    Promise.all([
-      fetch("/api/downloads").then((response) => response.json()).catch(() => []),
-    ]).then(([downloads]) => {
-      if (cancelled) return;
-
-      if (Array.isArray(downloads)) {
-        setDownloadQueued(
-          downloads.some(
-            (item) => Number(item.tmdbId) === activeItem.id && item.mediaType === type
-          )
-        );
-      }
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [activeItem.id, open, type]);
 
   useEffect(() => {
     if (!open) return;
@@ -158,6 +145,37 @@ export default function MediaDetailsModal({
         : "Play";
   const secondaryActionClass =
     "inline-flex items-center gap-1.5 rounded px-2 py-1 text-xs font-medium text-white/68 transition hover:bg-white/10 hover:text-white";
+  const downloadIdentity = useMemo(
+    () =>
+      type === "movie"
+        ? {
+            tmdbId: activeItem.id,
+            mediaType: "movie" as const,
+          }
+        : {
+            tmdbId: activeItem.id,
+            mediaType: "tv" as const,
+            seasonNumber: resumeProgress?.seasonNumber ?? selectedSeasonNumber,
+            episodeNumber: resumeProgress?.episodeNumber ?? 1,
+          },
+    [
+      activeItem.id,
+      resumeProgress?.episodeNumber,
+      resumeProgress?.seasonNumber,
+      selectedSeasonNumber,
+      type,
+    ]
+  );
+  const downloadRecord = useOfflineDownloadStatus(downloadIdentity);
+  const downloadStatusText = useMemo(() => {
+    if (!downloadRecord) return null;
+    if (downloadRecord.status === "completed") return "Available offline on this device";
+    if (downloadRecord.status === "downloading") return `Downloading ${downloadRecord.progressPct}%`;
+    if (downloadRecord.status === "failed" || downloadRecord.status === "unsupported") {
+      return downloadRecord.reason || "Download unavailable";
+    }
+    return null;
+  }, [downloadRecord]);
 
   const totalEpisodePages = Math.max(1, Math.ceil(seasonEpisodes.length / 10));
   const visibleEpisodes = useMemo(
@@ -169,20 +187,88 @@ export default function MediaDetailsModal({
     [data?.similar]
   );
 
-  async function toggleDownload() {
-    const next = !downloadQueued;
-    setDownloadQueued(next);
-    await fetch("/api/downloads", {
-      method: next ? "POST" : "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+  async function resolveDownloadRequest(): Promise<OfflineMediaRequest> {
+    const releaseYear =
+      type === "movie"
+        ? activeItem.release_date
+          ? Number(activeItem.release_date.slice(0, 4))
+          : data?.year
+            ? Number(data.year)
+            : null
+        : activeItem.first_air_date
+          ? Number(activeItem.first_air_date.slice(0, 4))
+          : data?.year
+            ? Number(data.year)
+            : null;
+
+    if (type === "movie") {
+      return {
         tmdbId: activeItem.id,
-        mediaType: type,
+        mediaType: "movie",
         title,
         posterPath: activeItem.poster_path,
-        status: "unsupported",
-      }),
-    }).catch(() => setDownloadQueued(!next));
+        backdropPath: activeItem.backdrop_path,
+        releaseYear,
+      };
+    }
+
+    const targetSeasonNumber = resumeProgress?.seasonNumber ?? selectedSeasonNumber;
+    const targetSeason =
+      data?.seasons.find((season) => season.season_number === targetSeasonNumber) ?? null;
+
+    let targetEpisodes =
+      targetSeasonNumber === selectedSeasonNumber ? seasonEpisodes : episodeCacheRef.current[targetSeasonNumber];
+
+    if (!targetEpisodes?.length) {
+      const seasonResponse = await fetch(
+        `/api/tmdb/season?showId=${activeItem.id}&season=${targetSeasonNumber}`
+      );
+      if (!seasonResponse.ok) {
+        throw new Error("Could not load the episode for download.");
+      }
+      const payload = (await seasonResponse.json()) as { episodes: TMDBEpisode[] };
+      targetEpisodes = payload.episodes;
+      episodeCacheRef.current[targetSeasonNumber] = payload.episodes;
+    }
+
+    const targetEpisodeNumber =
+      resumeProgress?.seasonNumber === targetSeasonNumber && resumeProgress?.episodeNumber
+        ? resumeProgress.episodeNumber
+        : targetEpisodes[0]?.episode_number ?? 1;
+    const targetEpisode =
+      targetEpisodes.find((episode) => episode.episode_number === targetEpisodeNumber) ??
+      targetEpisodes[0];
+
+    return {
+      tmdbId: activeItem.id,
+      mediaType: "tv",
+      title,
+      posterPath: activeItem.poster_path,
+      backdropPath: activeItem.backdrop_path,
+      releaseYear,
+      seasonNumber: targetSeasonNumber,
+      seasonTmdbId: targetSeason ? String(targetSeason.id) : null,
+      seasonTitle: targetSeason?.name ?? `Season ${targetSeasonNumber}`,
+      episodeNumber: targetEpisode?.episode_number ?? targetEpisodeNumber,
+      episodeTmdbId: targetEpisode ? String(targetEpisode.id) : null,
+      episodeTitle: targetEpisode?.name ?? null,
+    };
+  }
+
+  async function toggleDownload() {
+    if (downloadActionBusy || downloadRecord?.status === "downloading") return;
+
+    setDownloadActionBusy(true);
+    try {
+      const request = await resolveDownloadRequest();
+      if (downloadRecord?.status === "completed") {
+        await removeOfflineDownload(request);
+      } else {
+        await startOfflineDownload(request);
+      }
+    } finally {
+      setDownloadActionBusy(false);
+    }
   }
 
   useEffect(() => {
@@ -338,16 +424,34 @@ export default function MediaDetailsModal({
             <button
               type="button"
               onClick={toggleDownload}
+              disabled={downloadActionBusy || downloadRecord?.status === "downloading"}
               className={`inline-flex h-10 w-10 items-center justify-center rounded-full transition ${
-                downloadQueued
+                downloadRecord?.status === "completed"
                   ? "bg-white text-black"
                   : "bg-white/10 text-white hover:bg-white/16"
               }`}
-              title={downloadQueued ? "Remove download" : "Download"}
+              title={
+                downloadRecord?.status === "completed"
+                  ? "Remove download"
+                  : !isOfflineDownloadSupported()
+                    ? "Download unavailable"
+                    : downloadRecord?.status === "downloading"
+                      ? `Downloading ${downloadRecord.progressPct}%`
+                      : "Download"
+              }
             >
-              <DownloadSimple size={16} weight={downloadQueued ? "fill" : "regular"} />
+              {downloadActionBusy || downloadRecord?.status === "downloading" ? (
+                <CircleNotch size={16} weight="bold" className="animate-spin" />
+              ) : downloadRecord?.status === "completed" ? (
+                <Check size={16} weight="bold" />
+              ) : (
+                <DownloadSimple size={16} weight="regular" />
+              )}
             </button>
           </div>
+          {downloadStatusText && (
+            <p className="mt-2 text-xs text-white/45">{downloadStatusText}</p>
+          )}
 
           {/* Description */}
           <p className="mt-4 text-sm leading-6 text-white/68">

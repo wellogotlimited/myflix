@@ -38,6 +38,15 @@ export default function AppBootstrap() {
   const { data: session, status } = useSession();
 
   useEffect(() => {
+    if (!("serviceWorker" in navigator)) return;
+    if (process.env.NODE_ENV !== "production" && window.location.hostname !== "localhost") {
+      return;
+    }
+
+    navigator.serviceWorker.register("/sw.js").catch(() => {});
+  }, []);
+
+  useEffect(() => {
     if (status !== "authenticated" || !session?.user?.profileId) return;
 
     fetch("/api/preferences")
