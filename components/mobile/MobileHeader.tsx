@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { MagnifyingGlass } from "@phosphor-icons/react";
 import BrandWordmark from "@/components/BrandWordmark";
+import NotificationBell from "@/components/NotificationBell";
 import { useProfileSession } from "@/lib/profile-session";
 
 export default function MobileHeader() {
@@ -26,6 +27,9 @@ export default function MobileHeader() {
         <BrandWordmark size={28} textClassName="text-2xl font-bold text-white" />
       )}
       <div className="flex items-center gap-4">
+        <div className="flex-shrink-0">
+          <NotificationBell size={28} />
+        </div>
         <Link href="/search" className="text-white">
           <MagnifyingGlass size={28} weight="bold" />
         </Link>

@@ -131,7 +131,11 @@ export default function VideoPlayer({
     streamKey: "",
     tracks: [],
   });
-  const [subtitleDelay, setSubtitleDelay] = useState(0);
+  const [subtitleDelay, setSubtitleDelay] = useState(() => {
+    if (typeof window === "undefined") return 0;
+    const saved = window.localStorage.getItem("myflix-subtitle-delay");
+    return saved ? Number(saved) || 0 : 0;
+  });
   const [subtitleFontSize] = useState(100);
   const [centerIndicator, setCenterIndicator] = useState<"play" | "pause" | null>(null);
   const [videoEnded, setVideoEnded] = useState(false);
@@ -148,6 +152,15 @@ export default function VideoPlayer({
     if (typeof window === "undefined") return false;
     const val = localStorage.getItem("myflix-proxy-enabled");
     return val === null ? false : val === "true";
+  });
+  const [defaultCaptionsEnabled] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("myflix-captions-enabled") === "true";
+  });
+  const [autoplayNextEpisode] = useState(() => {
+    if (typeof window === "undefined") return true;
+    const value = localStorage.getItem("myflix-autoplay-next");
+    return value === null ? true : value === "true";
   });
   const [debugLog, setDebugLog] = useState<string[]>([]);
   const [hlsMode, setHlsMode] = useState<"hlsjs" | "native" | "file" | "none">("none");
@@ -249,6 +262,14 @@ export default function VideoPlayer({
     if (activeCaption.content) return parseCaptions(activeCaption.content);
     return captionCues;
   }, [activeCaption, captionCues]);
+  useEffect(() => {
+    if (!defaultCaptionsEnabled || captions.length === 0 || activeCaptionIdx >= 0) return;
+    setActiveCaptionIdx(0);
+  }, [activeCaptionIdx, captions.length, defaultCaptionsEnabled]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("myflix-subtitle-delay", String(subtitleDelay));
+  }, [subtitleDelay]);
   useEffect(() => {
     const emitCaptionState = () => {
       const payload: TvPlayerCaptionStatePayload = {
@@ -660,7 +681,7 @@ export default function VideoPlayer({
 
   // Auto-next episode countdown when video ends
   useEffect(() => {
-    if (!videoEnded || !nextEpisode) return;
+    if (!videoEnded || !nextEpisode || !autoplayNextEpisode) return;
 
     let count = 5;
     setAutoNextCountdown(count);
@@ -680,7 +701,7 @@ export default function VideoPlayer({
 
     countdownIntervalRef.current = intervalId;
     return () => clearInterval(intervalId);
-  }, [videoEnded]); // eslint-disable-line
+  }, [autoplayNextEpisode, videoEnded]); // eslint-disable-line
 
   const cancelAutoNext = useCallback(() => {
     if (countdownIntervalRef.current) {

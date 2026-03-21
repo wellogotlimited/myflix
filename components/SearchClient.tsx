@@ -1,7 +1,9 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import MediaCard from "./MediaCard";
+import NotificationBell from "./NotificationBell";
 import { TMDBItem } from "@/lib/tmdb";
 
 const SEARCH_GENRES = [
@@ -34,9 +36,62 @@ export default function SearchClient({
   query: string;
   results: TMDBItem[];
 }) {
+  const router = useRouter();
+  const [value, setValue] = useState(query);
   const [typeFilter, setTypeFilter] = useState<"all" | "movie" | "tv">("all");
   const [genreFilter, setGenreFilter] = useState<number | null>(null);
   const [minRating, setMinRating] = useState(0);
+  const [suggestions, setSuggestions] = useState<{
+    recent: string[];
+    trending: string[];
+    collections: Array<{ id: number; name?: string }>;
+  }>({
+    recent: [],
+    trending: [],
+    collections: [],
+  });
+
+  useEffect(() => {
+    setValue(query);
+  }, [query]);
+
+  useEffect(() => {
+    const q = value.trim();
+    const controller = new AbortController();
+    fetch(`/api/search/suggestions?q=${encodeURIComponent(q)}`, { signal: controller.signal })
+      .then((response) => response.json())
+      .then((data) => {
+        setSuggestions({
+          recent: Array.isArray(data?.recent) ? data.recent : [],
+          trending: Array.isArray(data?.trending) ? data.trending : [],
+          collections: Array.isArray(data?.collections) ? data.collections : [],
+        });
+      })
+      .catch(() => {});
+
+    return () => controller.abort();
+  }, [value]);
+
+  useEffect(() => {
+    const trimmed = value.trim();
+    const currentQuery = query.trim();
+    if (trimmed === currentQuery) return;
+
+    const timer = setTimeout(() => {
+      router.replace(trimmed ? `/search?q=${encodeURIComponent(trimmed)}` : "/search");
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [query, router, value]);
+
+  useEffect(() => {
+    if (!query.trim()) return;
+    fetch("/api/search/recent", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query }),
+    }).catch(() => {});
+  }, [query]);
 
   // Only show genres that actually appear in the current results
   const availableGenreIds = useMemo(() => {
@@ -66,8 +121,99 @@ export default function SearchClient({
       active ? "bg-white text-black" : "bg-white/10 text-white hover:bg-white/[0.16]"
     }`;
 
+  function submitSearch(nextQuery: string) {
+    const trimmed = nextQuery.trim();
+    setValue(nextQuery);
+    router.replace(trimmed ? `/search?q=${encodeURIComponent(trimmed)}` : "/search");
+  }
+
   return (
     <div>
+      <div className="mb-6 flex max-w-2xl items-center gap-3">
+        <div className="flex min-w-0 flex-1 items-center gap-2 rounded-full bg-white/10 px-4 py-3">
+          <input
+            value={value}
+            onChange={(event) => setValue(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") submitSearch(value);
+            }}
+            placeholder="Search shows, movies, cast, collections..."
+            className="flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/40"
+          />
+          <button
+            type="button"
+            onClick={() => submitSearch(value)}
+            className="shrink-0 rounded-full bg-white px-4 py-1.5 text-sm font-medium text-black"
+          >
+            Search
+          </button>
+        </div>
+        <div className="shrink-0">
+          <NotificationBell size={18} panelAlign="right" />
+        </div>
+      </div>
+
+      {(suggestions.recent.length > 0 || suggestions.trending.length > 0) && !query && (
+        <div className="mb-6 space-y-4">
+          {suggestions.recent.length > 0 && (
+            <div>
+              <p className="mb-2 text-xs uppercase tracking-[0.22em] text-white/40">Recent</p>
+              <div className="flex flex-wrap gap-2">
+                {suggestions.recent.map((item) => (
+                  <button
+                    key={item}
+                    type="button"
+                    onClick={() => submitSearch(item)}
+                    className="rounded-full bg-white/10 px-4 py-2 text-sm text-white transition hover:bg-white/16"
+                  >
+                    {item}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {suggestions.trending.length > 0 && (
+            <div>
+              <p className="mb-2 text-xs uppercase tracking-[0.22em] text-white/40">Trending searches</p>
+              <div className="flex flex-wrap gap-2">
+                {suggestions.trending.map((item) => (
+                  <button
+                    key={item}
+                    type="button"
+                    onClick={() => submitSearch(item)}
+                    className="rounded-full bg-white/10 px-4 py-2 text-sm text-white transition hover:bg-white/16"
+                  >
+                    {item}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {query && suggestions.collections.length > 0 && (
+        <div className="mb-6">
+          {suggestions.collections.length > 0 && (
+            <div className="rounded-[22px] border border-white/10 bg-white/[0.03] p-4">
+              <p className="mb-3 text-xs uppercase tracking-[0.22em] text-white/40">Collections</p>
+              <div className="flex flex-wrap gap-2">
+                {suggestions.collections.map((collection) => (
+                  <button
+                    key={collection.id}
+                    type="button"
+                    onClick={() => submitSearch(collection.name ?? "")}
+                    className="rounded-full bg-white/10 px-3 py-2 text-sm text-white transition hover:bg-white/16"
+                  >
+                    {collection.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {results.length > 0 && (
         <div className="mb-6 space-y-3">
           {/* Type filter */}

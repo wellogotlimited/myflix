@@ -72,7 +72,40 @@ export default function ContinueWatchingRow() {
   if (visibleItems.length === 0) return null;
 
   function dismiss(item: ProgressItem) {
-    fetch(`/api/progress/${item.tmdbId}`, { method: "DELETE" }).catch(() => {});
+    fetch(`/api/progress/${item.tmdbId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "remove" }),
+    }).catch(() => {});
+    setItems((prev) =>
+      prev.filter(
+        (entry) =>
+          entry.tmdbId !== item.tmdbId || entry.mediaType !== item.mediaType
+      )
+    );
+  }
+
+  function restart(item: ProgressItem) {
+    fetch(`/api/progress/${item.tmdbId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "restart" }),
+    }).catch(() => {});
+    setItems((prev) =>
+      prev.map((entry) =>
+        entry.tmdbId === item.tmdbId && entry.mediaType === item.mediaType
+          ? { ...entry, positionSec: 0 }
+          : entry
+      )
+    );
+  }
+
+  function markWatched(item: ProgressItem) {
+    fetch(`/api/progress/${item.tmdbId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "mark-watched" }),
+    }).catch(() => {});
     setItems((prev) =>
       prev.filter(
         (entry) =>
@@ -87,7 +120,7 @@ export default function ContinueWatchingRow() {
         {profileName ? `Continue Watching for ${profileName}` : "Continue Watching"}
       </h2>
 
-      <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
+      <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
         {visibleItems.map((item) => {
           const href =
             item.mediaType === "movie"
@@ -100,7 +133,7 @@ export default function ContinueWatchingRow() {
           return (
             <div key={`${item.mediaType}-${item.tmdbId}`} className="group relative w-36 flex-shrink-0 md:w-44">
               <Link href={href} className="block">
-                <div className="relative overflow-hidden rounded">
+                <div className="relative overflow-hidden rounded-sm">
                   {item.posterPath || item.backdropPath ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
@@ -126,9 +159,27 @@ export default function ContinueWatchingRow() {
                 ) : null}
               </Link>
 
+              <div className="pointer-events-none absolute inset-x-0 bottom-8 hidden h-14 bg-gradient-to-t from-black/90 to-transparent opacity-0 transition md:block md:group-hover:opacity-100" />
+              <div className="absolute inset-x-1 bottom-10 hidden items-center gap-1 opacity-0 transition md:flex md:group-hover:opacity-100">
+                <button
+                  type="button"
+                  onClick={() => restart(item)}
+                  className="pointer-events-auto flex-1 rounded-sm bg-black/75 px-2 py-1.5 text-[11px] text-white/78 transition hover:bg-black/88 hover:text-white"
+                >
+                  Restart
+                </button>
+                <button
+                  type="button"
+                  onClick={() => markWatched(item)}
+                  className="pointer-events-auto flex-1 rounded-sm bg-black/75 px-2 py-1.5 text-[11px] text-white/78 transition hover:bg-black/88 hover:text-white"
+                >
+                  Watched
+                </button>
+              </div>
+
               <button
                 onClick={() => dismiss(item)}
-                className="absolute right-1 top-1 hidden rounded-full bg-black/70 p-1 text-white/60 transition hover:text-white group-hover:flex"
+                className="absolute right-1 top-1 hidden rounded bg-black/70 p-1 text-white/60 transition hover:text-white group-hover:flex"
                 title="Remove"
               >
                 <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">

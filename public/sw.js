@@ -57,3 +57,25 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 });
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const href = event.notification?.data?.href || "/";
+
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+      for (const client of clients) {
+        if ("focus" in client) {
+          client.navigate(href);
+          return client.focus();
+        }
+      }
+
+      if (self.clients.openWindow) {
+        return self.clients.openWindow(href);
+      }
+
+      return undefined;
+    })
+  );
+});

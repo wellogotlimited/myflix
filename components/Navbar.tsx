@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import BrandWordmark from "@/components/BrandWordmark";
+import NotificationBell from "@/components/NotificationBell";
 import ProfileSwitcher from "@/components/profile/ProfileSwitcher";
 
 const NAV_ITEMS = [
@@ -79,6 +80,7 @@ export default function Navbar() {
 
       <div className="flex items-center gap-4">
         <ProfileSwitcher />
+        <NotificationBell size={20} />
         {searchOpen ? (
           <form onSubmit={handleSearch} className="flex items-center">
             <input

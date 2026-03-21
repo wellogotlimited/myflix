@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { AVATAR_PRESETS } from "@/lib/avatars";
@@ -12,6 +12,12 @@ interface ProfileData {
   maturityLevel: string;
   isKidsProfile: boolean;
   hasPin: boolean;
+}
+
+interface RuleTitle {
+  id: number;
+  title: string;
+  mediaType: "movie" | "tv";
 }
 
 export default function EditProfileForm({ profile }: { profile: ProfileData }) {
@@ -31,6 +37,30 @@ export default function EditProfileForm({ profile }: { profile: ProfileData }) {
   const [pinInput, setPinInput] = useState("");
   const [pinError, setPinError] = useState("");
   const [pinSaving, setPinSaving] = useState(false);
+  const [safeSearch, setSafeSearch] = useState(false);
+  const [hideMatureArtwork, setHideMatureArtwork] = useState(false);
+  const [allowOnlyMode, setAllowOnlyMode] = useState(false);
+  const [sessionLimitMinutes, setSessionLimitMinutes] = useState("");
+  const [bedtimeStart, setBedtimeStart] = useState("");
+  const [bedtimeEnd, setBedtimeEnd] = useState("");
+  const [blockedTitles, setBlockedTitles] = useState<RuleTitle[]>([]);
+  const [allowedTitles, setAllowedTitles] = useState<RuleTitle[]>([]);
+
+  useEffect(() => {
+    fetch(`/api/profile-settings/${profile._id}`)
+      .then((response) => response.json())
+      .then(async (data) => {
+        setSafeSearch(Boolean(data?.safeSearch));
+        setHideMatureArtwork(Boolean(data?.hideMatureArtwork));
+        setAllowOnlyMode(Boolean(data?.allowOnlyMode));
+        setSessionLimitMinutes(data?.sessionLimitMinutes ? String(data.sessionLimitMinutes) : "");
+        setBedtimeStart(data?.bedtimeStart ?? "");
+        setBedtimeEnd(data?.bedtimeEnd ?? "");
+        setBlockedTitles(await lookupRuleTitles(data?.blockedTmdbIds));
+        setAllowedTitles(await lookupRuleTitles(data?.allowedTmdbIds));
+      })
+      .catch(() => {});
+  }, [profile._id]);
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
@@ -54,6 +84,21 @@ export default function EditProfileForm({ profile }: { profile: ProfileData }) {
     if (session?.user?.profileId === profile._id) {
       await update({ profileId: profile._id });
     }
+
+    await fetch(`/api/profile-settings/${profile._id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        safeSearch,
+        hideMatureArtwork,
+        allowOnlyMode,
+        sessionLimitMinutes: sessionLimitMinutes ? Number(sessionLimitMinutes) : null,
+        bedtimeStart: bedtimeStart || null,
+        bedtimeEnd: bedtimeEnd || null,
+        blockedTmdbIds: blockedTitles.map((item) => item.id),
+        allowedTmdbIds: allowedTitles.map((item) => item.id),
+      }),
+    }).catch(() => {});
 
     router.push("/profiles/manage");
   }
@@ -250,6 +295,72 @@ export default function EditProfileForm({ profile }: { profile: ProfileData }) {
           )}
         </div>
 
+        {maturityLevel !== "ADULT" ? (
+        <div className="border-t border-white/10 pt-6">
+          <p className="mb-3 text-sm font-medium text-gray-300">Kids & Parental Controls</p>
+          <div className="space-y-4">
+            <label className="flex items-center justify-between gap-4 rounded border border-white/10 bg-white/[0.03] px-4 py-3">
+              <span className="text-sm text-white">Safe Search</span>
+              <input type="checkbox" checked={safeSearch} onChange={(e) => setSafeSearch(e.target.checked)} />
+            </label>
+            <label className="flex items-center justify-between gap-4 rounded border border-white/10 bg-white/[0.03] px-4 py-3">
+              <span className="text-sm text-white">Hide Mature Artwork</span>
+              <input type="checkbox" checked={hideMatureArtwork} onChange={(e) => setHideMatureArtwork(e.target.checked)} />
+            </label>
+            <label className="flex items-center justify-between gap-4 rounded border border-white/10 bg-white/[0.03] px-4 py-3">
+              <span className="text-sm text-white">Allow Listed Titles Only</span>
+              <input type="checkbox" checked={allowOnlyMode} onChange={(e) => setAllowOnlyMode(e.target.checked)} />
+            </label>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-300">Daily Session Limit (minutes)</label>
+                <input
+                  type="number"
+                  min={0}
+                  value={sessionLimitMinutes}
+                  onChange={(e) => setSessionLimitMinutes(e.target.value)}
+                  className="w-full rounded bg-[#333] px-4 py-3 text-white outline-none focus:bg-[#454545]"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-300">Bedtime Start</label>
+                  <input
+                    type="time"
+                    value={bedtimeStart}
+                    onChange={(e) => setBedtimeStart(e.target.value)}
+                    className="w-full rounded bg-[#333] px-4 py-3 text-white outline-none focus:bg-[#454545]"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-300">Bedtime End</label>
+                  <input
+                    type="time"
+                    value={bedtimeEnd}
+                    onChange={(e) => setBedtimeEnd(e.target.value)}
+                    className="w-full rounded bg-[#333] px-4 py-3 text-white outline-none focus:bg-[#454545]"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <TitlePickerInput
+              label="Blocked Titles"
+              selected={blockedTitles}
+              onChange={setBlockedTitles}
+              placeholder="Search titles to block"
+            />
+            <TitlePickerInput
+              label="Allowed Titles"
+              selected={allowedTitles}
+              onChange={setAllowedTitles}
+              placeholder="Search titles to allow"
+            />
+          </div>
+        </div>
+        ) : null}
+
         <div className="flex gap-3 pt-2">
           <button
             type="submit"
@@ -276,6 +387,147 @@ export default function EditProfileForm({ profile }: { profile: ProfileData }) {
           {deleting ? "Deleting…" : "Delete Profile"}
         </button>
       </form>
+    </div>
+  );
+}
+
+async function lookupRuleTitles(ids: unknown): Promise<RuleTitle[]> {
+  if (!Array.isArray(ids)) return [];
+
+  const validIds = ids
+    .map((value) => Number(value))
+    .filter((value) => Number.isInteger(value) && value > 0);
+
+  const results = await Promise.all(
+    validIds.map(async (id) => {
+      const movie = await fetch(`/api/tmdb/details?id=${id}&type=movie`).catch(() => null);
+      if (movie?.ok) {
+        const data = await movie.json();
+        return { id, title: data.title ?? "Unknown title", mediaType: "movie" as const };
+      }
+
+      const show = await fetch(`/api/tmdb/details?id=${id}&type=tv`).catch(() => null);
+      if (show?.ok) {
+        const data = await show.json();
+        return { id, title: data.title ?? "Unknown title", mediaType: "tv" as const };
+      }
+
+      return { id, title: `Title ${id}`, mediaType: "movie" as const };
+    })
+  );
+
+  return results;
+}
+
+function TitlePickerInput({
+  label,
+  selected,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  selected: RuleTitle[];
+  onChange: (titles: RuleTitle[]) => void;
+  placeholder: string;
+}) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<RuleTitle[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const normalized = query.trim();
+    if (normalized.length < 2) {
+      setResults([]);
+      return;
+    }
+
+    const controller = new AbortController();
+    setLoading(true);
+    fetch(`/api/search/suggestions?q=${encodeURIComponent(normalized)}`, {
+      signal: controller.signal,
+    })
+      .then((response) => response.json())
+      .then((data) => {
+        if (!Array.isArray(data?.titles)) {
+          setResults([]);
+          return;
+        }
+        setResults(
+          data.titles
+            .map((item: { id: number; title?: string; name?: string; media_type?: string }) => ({
+              id: item.id,
+              title: item.title ?? item.name ?? "Untitled",
+              mediaType: item.media_type === "tv" ? "tv" : "movie",
+            }))
+            .filter((item: RuleTitle) => !selected.some((selectedItem) => selectedItem.id === item.id))
+            .slice(0, 6)
+        );
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+
+    return () => controller.abort();
+  }, [query, selected]);
+
+  function addTitle(item: RuleTitle) {
+    onChange([...selected, item]);
+    setQuery("");
+    setResults([]);
+  }
+
+  function removeTitle(id: number) {
+    onChange(selected.filter((item) => item.id !== id));
+  }
+
+  return (
+    <div>
+      <label className="mb-1 block text-sm font-medium text-gray-300">{label}</label>
+      <div className="relative">
+        <input
+          type="text"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder={placeholder}
+          className="w-full rounded bg-[#333] px-4 py-3 text-white outline-none focus:bg-[#454545]"
+        />
+        {query.trim().length >= 2 ? (
+          <div className="absolute left-0 right-0 top-[calc(100%+0.35rem)] z-10 overflow-hidden rounded border border-white/10 bg-[#1d1d1d] shadow-lg">
+            {loading ? (
+              <div className="px-4 py-3 text-sm text-white/45">Searching...</div>
+            ) : results.length > 0 ? (
+              results.map((item) => (
+                <button
+                  key={`${item.mediaType}-${item.id}`}
+                  type="button"
+                  onClick={() => addTitle(item)}
+                  className="flex w-full items-center justify-between px-4 py-3 text-left text-sm text-white/78 transition hover:bg-white/8 hover:text-white"
+                >
+                  <span className="truncate">{item.title}</span>
+                  <span className="ml-3 text-[11px] uppercase tracking-[0.16em] text-white/35">
+                    {item.mediaType}
+                  </span>
+                </button>
+              ))
+            ) : (
+              <div className="px-4 py-3 text-sm text-white/45">No matches found.</div>
+            )}
+          </div>
+        ) : null}
+      </div>
+      {selected.length > 0 ? (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {selected.map((item) => (
+            <button
+              key={`${item.mediaType}-${item.id}`}
+              type="button"
+              onClick={() => removeTitle(item.id)}
+              className="rounded border border-white/10 bg-white/[0.04] px-3 py-1.5 text-sm text-white/82 transition hover:bg-white/[0.08]"
+            >
+              {item.title}
+            </button>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

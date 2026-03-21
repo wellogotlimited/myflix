@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { signOut } from "next-auth/react";
 
 export default function AccountSettings({ email }: { email: string }) {
@@ -10,6 +10,32 @@ export default function AccountSettings({ email }: { email: string }) {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [devices, setDevices] = useState<Array<{ _id: string; sessionKey: string; label: string; lastSeenAt: string; trusted: boolean; lastPath?: string | null }>>([]);
+  const [notifications, setNotifications] = useState<Array<{ _id: string; title: string; body: string; createdAt: string; readAt?: string | null }>>([]);
+  const [downloads, setDownloads] = useState<Array<{ _id: string; title: string; status: string; reason?: string | null }>>([]);
+  const [activity, setActivity] = useState<{
+    history: Array<{ _id: string; tmdbId: number; mediaType: string; watchedAt?: string }>;
+    ratings: Array<{ _id: string; tmdbId: number; mediaType: string; rating: string }>;
+    hiddenTitles: Array<{ _id: string; tmdbId: number; mediaType: string }>;
+  }>({ history: [], ratings: [], hiddenTitles: [] });
+
+  useEffect(() => {
+    Promise.all([
+      fetch("/api/device-sessions").then((res) => res.json()).catch(() => []),
+      fetch("/api/notifications").then((res) => res.json()).catch(() => ({ events: [] })),
+      fetch("/api/downloads").then((res) => res.json()).catch(() => []),
+      fetch("/api/profile-activity").then((res) => res.json()).catch(() => ({ history: [], ratings: [], hiddenTitles: [] })),
+    ]).then(([deviceData, notificationData, downloadData, activityData]) => {
+      if (Array.isArray(deviceData)) setDevices(deviceData);
+      if (Array.isArray(notificationData?.events)) setNotifications(notificationData.events);
+      if (Array.isArray(downloadData)) setDownloads(downloadData);
+      setActivity({
+        history: Array.isArray(activityData?.history) ? activityData.history : [],
+        ratings: Array.isArray(activityData?.ratings) ? activityData.ratings : [],
+        hiddenTitles: Array.isArray(activityData?.hiddenTitles) ? activityData.hiddenTitles : [],
+      });
+    });
+  }, []);
 
   async function handlePasswordChange(e: React.FormEvent) {
     e.preventDefault();
@@ -44,6 +70,63 @@ export default function AccountSettings({ email }: { email: string }) {
     }
   }
 
+  const unreadNotifications = useMemo(
+    () => notifications.filter((item) => !item.readAt).length,
+    [notifications]
+  );
+
+  async function requestBrowserNotifications() {
+    if (!("Notification" in window)) return;
+    const permission = await Notification.requestPermission();
+    await fetch("/api/notifications", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        permission,
+        browserSupported: true,
+        pushEnabled: permission === "granted",
+      }),
+    }).catch(() => {});
+  }
+
+  async function markAllNotificationsRead() {
+    const ids = notifications.filter((item) => !item.readAt).map((item) => item._id);
+    if (!ids.length) return;
+    await fetch("/api/notifications", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ markReadIds: ids }),
+    }).catch(() => {});
+    setNotifications((current) =>
+      current.map((item) => ({ ...item, readAt: item.readAt ?? new Date().toISOString() }))
+    );
+  }
+
+  async function toggleTrusted(sessionKey: string, trusted: boolean) {
+    await fetch("/api/device-sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionKey, trusted }),
+    }).catch(() => {});
+    setDevices((current) =>
+      current.map((item) => (item.sessionKey === sessionKey ? { ...item, trusted } : item))
+    );
+  }
+
+  async function removeDevice(sessionKey: string) {
+    await fetch("/api/device-sessions", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionKey }),
+    }).catch(() => {});
+    setDevices((current) => current.filter((item) => item.sessionKey !== sessionKey));
+  }
+
+  async function resetRecommendations() {
+    await fetch("/api/profile-activity-reset", { method: "POST" }).catch(() => {});
+    setActivity((current) => ({ ...current, ratings: [], hiddenTitles: [], history: [] }));
+  }
+
   return (
     <div className="min-h-screen bg-[#141414] px-6 py-20">
       <div className="mx-auto max-w-xl">
@@ -52,6 +135,137 @@ export default function AccountSettings({ email }: { email: string }) {
         <div className="mb-8 rounded bg-[#1a1a1a] px-6 py-5">
           <p className="text-xs font-medium uppercase tracking-widest text-gray-500">Email</p>
           <p className="mt-1 text-white">{email}</p>
+        </div>
+
+        <div className="mb-8 rounded bg-[#1a1a1a] px-6 py-5">
+          <div className="mb-5 flex items-center justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-semibold text-white">Devices & Sessions</h2>
+              <p className="mt-1 text-sm text-white/45">Track active browsers and trusted devices for this account.</p>
+            </div>
+          </div>
+          <div className="space-y-3">
+            {devices.length > 0 ? devices.map((device) => (
+              <div key={device._id} className="rounded border border-white/10 bg-white/[0.03] px-4 py-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium text-white">{device.label}</p>
+                    <p className="text-xs text-white/45">
+                      Last seen {new Date(device.lastSeenAt).toLocaleString()}
+                      {device.lastPath ? ` • ${device.lastPath}` : ""}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => toggleTrusted(device.sessionKey, !device.trusted)}
+                      className={`rounded-full px-3 py-1.5 text-xs font-medium transition ${
+                        device.trusted ? "bg-white text-black" : "bg-white/10 text-white"
+                      }`}
+                    >
+                      {device.trusted ? "Trusted" : "Trust"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => removeDevice(device.sessionKey)}
+                      className="rounded-full border border-white/10 px-3 py-1.5 text-xs text-white/65 transition hover:border-white/25 hover:text-white"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )) : (
+              <p className="text-sm text-white/45">No device sessions recorded yet.</p>
+            )}
+          </div>
+        </div>
+
+        <div className="mb-8 rounded bg-[#1a1a1a] px-6 py-5">
+          <div className="mb-5 flex items-center justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-semibold text-white">Notifications</h2>
+              <p className="mt-1 text-sm text-white/45">
+                Release reminders, download updates, and in-app alerts. {unreadNotifications > 0 ? `${unreadNotifications} unread.` : "All caught up."}
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={requestBrowserNotifications}
+                className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-black transition hover:bg-gray-200"
+              >
+                Enable browser alerts
+              </button>
+              <button
+                type="button"
+                onClick={markAllNotificationsRead}
+                className="rounded-full border border-white/12 px-4 py-2 text-sm text-white/75 transition hover:border-white/24 hover:text-white"
+              >
+                Mark all read
+              </button>
+            </div>
+          </div>
+          <div className="space-y-3">
+            {notifications.slice(0, 8).map((item) => (
+              <div key={item._id} className="rounded border border-white/10 bg-white/[0.03] px-4 py-3">
+                <p className="text-sm font-medium text-white">{item.title}</p>
+                <p className="mt-1 text-sm text-white/55">{item.body}</p>
+                <p className="mt-2 text-xs text-white/35">{new Date(item.createdAt).toLocaleString()}</p>
+              </div>
+            ))}
+            {notifications.length === 0 && <p className="text-sm text-white/45">No notifications yet.</p>}
+          </div>
+        </div>
+
+        <div className="mb-8 rounded bg-[#1a1a1a] px-6 py-5">
+          <div className="mb-5 flex items-center justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-semibold text-white">Profile Activity</h2>
+              <p className="mt-1 text-sm text-white/45">
+                Review recent history, ratings, hidden titles, and reset recommendations if this profile needs a clean slate.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={resetRecommendations}
+              className="rounded-full border border-white/12 px-4 py-2 text-sm text-white/75 transition hover:border-white/24 hover:text-white"
+            >
+              Reset recommendations
+            </button>
+          </div>
+          <div className="grid gap-4 md:grid-cols-3">
+            <div className="rounded border border-white/10 bg-white/[0.03] p-4">
+              <p className="text-xs uppercase tracking-[0.22em] text-white/35">History</p>
+              <p className="mt-2 text-3xl font-black text-white">{activity.history.length}</p>
+            </div>
+            <div className="rounded border border-white/10 bg-white/[0.03] p-4">
+              <p className="text-xs uppercase tracking-[0.22em] text-white/35">Ratings</p>
+              <p className="mt-2 text-3xl font-black text-white">{activity.ratings.length}</p>
+            </div>
+            <div className="rounded border border-white/10 bg-white/[0.03] p-4">
+              <p className="text-xs uppercase tracking-[0.22em] text-white/35">Hidden Titles</p>
+              <p className="mt-2 text-3xl font-black text-white">{activity.hiddenTitles.length}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="mb-8 rounded bg-[#1a1a1a] px-6 py-5">
+          <h2 className="mb-5 text-lg font-semibold text-white">Offline Queue</h2>
+          <div className="space-y-3">
+            {downloads.length > 0 ? downloads.map((download) => (
+              <div key={download._id} className="rounded border border-white/10 bg-white/[0.03] px-4 py-3">
+                <p className="text-sm font-medium text-white">{download.title}</p>
+                <p className="mt-1 text-xs text-white/45">
+                  {download.status === "unsupported"
+                    ? download.reason || "Not supported in this browser yet."
+                    : `Status: ${download.status}`}
+                </p>
+              </div>
+            )) : (
+              <p className="text-sm text-white/45">Your offline queue is empty.</p>
+            )}
+          </div>
         </div>
 
         <div className="rounded bg-[#1a1a1a] px-6 py-5">

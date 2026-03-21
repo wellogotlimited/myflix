@@ -1,10 +1,11 @@
 export const dynamic = "force-dynamic";
 
-import { attachCardContext, searchMulti, getTrending } from "@/lib/tmdb";
+import { attachCardContext, searchMulti, getTrending, type TMDBItem } from "@/lib/tmdb";
 import { requireProfile } from "@/lib/session";
 import { passesMaturityFilter } from "@/lib/maturity";
 import SearchClient from "@/components/SearchClient";
 import MobileSearchPage from "@/components/mobile/MobileSearchPage";
+import { applyProfileDiscoveryRules, getHiddenTitles, getParentalRule } from "@/lib/profile-controls";
 
 export default async function SearchPage({
   searchParams,
@@ -14,9 +15,17 @@ export default async function SearchPage({
   const [{ q }, profile] = await Promise.all([searchParams, requireProfile()]);
   const query = q || "";
   const maturityLevel = profile?.maturityLevel ?? "ADULT";
+  const [hiddenTitles, parentalRule] = await Promise.all([
+    getHiddenTitles(profile.profileId),
+    getParentalRule(profile.profileId),
+  ]);
 
-  const applyMaturity = <T extends { maturityRating?: string | null }>(items: T[]) =>
-    items.filter((item) => passesMaturityFilter(item.maturityRating, maturityLevel));
+  const applyMaturity = (items: TMDBItem[]) =>
+    applyProfileDiscoveryRules(
+      items.filter((item) => passesMaturityFilter(item.maturityRating, maturityLevel)),
+      hiddenTitles,
+      parentalRule
+    );
 
   // Desktop: always enrich results for hover previews
   // Mobile recommended: raw trending (portrait cards fetch their own details on tap)

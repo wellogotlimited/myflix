@@ -5,16 +5,17 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  BookmarkSimple,
   CaretDown,
   CaretLeft,
   CaretRight,
+  DownloadSimple,
   Play,
   SpeakerSimpleHigh,
   SpeakerSimpleSlash,
   X,
 } from "@phosphor-icons/react";
-import { useMyList } from "@/lib/my-list";
+import RatingButtons from "@/components/RatingButtons";
+import SaveButton from "@/components/SaveButton";
 import {
   formatResumeTime,
   useResumeProgress,
@@ -63,11 +64,11 @@ export default function MediaDetailsModal({
   const [episodesError, setEpisodesError] = useState<string | null>(null);
   const [episodePage, setEpisodePage] = useState(0);
   const [mobileTab, setMobileTab] = useState(0);
+  const [downloadQueued, setDownloadQueued] = useState(false);
   const episodeCacheRef = useRef<Record<number, TMDBEpisode[]>>({});
 
   const type = getMediaType(activeItem);
   const { data, loading } = useMediaDetails(activeItem, open);
-  const { isSaved, toggle } = useMyList(activeItem);
   const resumeProgress = useResumeProgress(activeItem, open);
 
   useEffect(() => {
@@ -78,6 +79,28 @@ export default function MediaDetailsModal({
   useEffect(() => {
     setHeaderMuted(true);
   }, [activeItem.id]);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    Promise.all([
+      fetch("/api/downloads").then((response) => response.json()).catch(() => []),
+    ]).then(([downloads]) => {
+      if (cancelled) return;
+
+      if (Array.isArray(downloads)) {
+        setDownloadQueued(
+          downloads.some(
+            (item) => Number(item.tmdbId) === activeItem.id && item.mediaType === type
+          )
+        );
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeItem.id, open, type]);
 
   useEffect(() => {
     if (!open) return;
@@ -133,6 +156,8 @@ export default function MediaDetailsModal({
       : resumeProgress?.positionSec && resumeProgress.positionSec > 30
         ? `Resume ${formatResumeTime(resumeProgress.positionSec)}`
         : "Play";
+  const secondaryActionClass =
+    "inline-flex items-center gap-1.5 rounded px-2 py-1 text-xs font-medium text-white/68 transition hover:bg-white/10 hover:text-white";
 
   const totalEpisodePages = Math.max(1, Math.ceil(seasonEpisodes.length / 10));
   const visibleEpisodes = useMemo(
@@ -143,6 +168,22 @@ export default function MediaDetailsModal({
     () => dedupeTMDBItems((data?.similar ?? []).slice(0, 6)),
     [data?.similar]
   );
+
+  async function toggleDownload() {
+    const next = !downloadQueued;
+    setDownloadQueued(next);
+    await fetch("/api/downloads", {
+      method: next ? "POST" : "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        tmdbId: activeItem.id,
+        mediaType: type,
+        title,
+        posterPath: activeItem.poster_path,
+        status: "unsupported",
+      }),
+    }).catch(() => setDownloadQueued(!next));
+  }
 
   useEffect(() => {
     if (type !== "tv" || !data) {
@@ -290,6 +331,23 @@ export default function MediaDetailsModal({
             <Play size={17} weight="fill" />
             {primaryActionLabel}
           </Link>
+
+          <div className="mt-3 flex items-center gap-2">
+            <SaveButton item={activeItem} size="sm" />
+            <RatingButtons item={activeItem} size="sm" />
+            <button
+              type="button"
+              onClick={toggleDownload}
+              className={`inline-flex h-10 w-10 items-center justify-center rounded-full transition ${
+                downloadQueued
+                  ? "bg-white text-black"
+                  : "bg-white/10 text-white hover:bg-white/16"
+              }`}
+              title={downloadQueued ? "Remove download" : "Download"}
+            >
+              <DownloadSimple size={16} weight={downloadQueued ? "fill" : "regular"} />
+            </button>
+          </div>
 
           {/* Description */}
           <p className="mt-4 text-sm leading-6 text-white/68">
@@ -546,7 +604,7 @@ export default function MediaDetailsModal({
                   </h2>
                 )}
 
-                <div className="mt-4 flex flex-wrap items-center gap-3">
+                <div className="mt-4 flex flex-wrap items-center gap-2.5">
                   <Link
                     href={playHref}
                     onClick={onClose}
@@ -555,18 +613,8 @@ export default function MediaDetailsModal({
                     <Play size={18} weight="fill" />
                     {primaryActionLabel}
                   </Link>
-                  <button
-                    type="button"
-                    onClick={toggle}
-                    className={`inline-flex h-12 w-12 items-center justify-center rounded-full ring-1 backdrop-blur-sm transition ${
-                      isSaved
-                        ? "bg-white text-black ring-white"
-                        : "bg-black/45 text-white ring-white/18 hover:bg-black/60"
-                    }`}
-                    title={isSaved ? "Remove from My List" : "Add to My List"}
-                  >
-                    <BookmarkSimple size={20} weight={isSaved ? "fill" : "regular"} />
-                  </button>
+                  <SaveButton item={activeItem} />
+                  <RatingButtons item={activeItem} size="md" />
                 </div>
               </div>
             </div>

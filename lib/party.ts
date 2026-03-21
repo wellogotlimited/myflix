@@ -21,6 +21,22 @@ export interface WatchPartyMessage {
   sentAt: string;
 }
 
+export interface WatchPartyReaction {
+  profileId: string;
+  emoji: string;
+  sentAt: string;
+}
+
+export interface WatchPartyQueueItem {
+  tmdbId: number;
+  mediaType: "movie" | "tv";
+  season?: number | null;
+  episode?: number | null;
+  title: string;
+  addedByProfileId: string;
+  addedAt: string;
+}
+
 export interface WatchPartyState {
   _id: string;
   code: string;
@@ -34,6 +50,9 @@ export interface WatchPartyState {
   lastUpdatedAt: string;
   members: WatchPartyMember[];
   messages: WatchPartyMessage[];
+  reactions: WatchPartyReaction[];
+  queue: WatchPartyQueueItem[];
+  scheduledFor?: string | null;
 }
 
 type SerializableParty = {
@@ -59,6 +78,21 @@ type SerializableParty = {
     text: string;
     sentAt: Date | string;
   }>;
+  reactions?: Array<{
+    profileId: string;
+    emoji: string;
+    sentAt: Date | string;
+  }>;
+  queue?: Array<{
+    tmdbId: number;
+    mediaType: "movie" | "tv";
+    season?: number | null;
+    episode?: number | null;
+    title: string;
+    addedByProfileId: string;
+    addedAt: Date | string;
+  }>;
+  scheduledFor?: Date | string | null;
 };
 
 type PartyMediaTarget = Pick<WatchPartyState, "mediaType" | "tmdbId" | "season" | "episode">;
@@ -142,5 +176,24 @@ export function serializePartyState(party: SerializableParty): WatchPartyState {
           ? message.sentAt
           : message.sentAt.toISOString(),
     })),
+    reactions: (party.reactions ?? []).map((reaction) => ({
+      profileId: reaction.profileId,
+      emoji: reaction.emoji,
+      sentAt:
+        typeof reaction.sentAt === "string"
+          ? reaction.sentAt
+          : reaction.sentAt.toISOString(),
+    })),
+    queue: (party.queue ?? []).map((item) => ({
+      ...item,
+      addedAt:
+        typeof item.addedAt === "string"
+          ? item.addedAt
+          : item.addedAt.toISOString(),
+    })),
+    scheduledFor:
+      typeof party.scheduledFor === "string"
+        ? party.scheduledFor
+        : party.scheduledFor?.toISOString() ?? null,
   };
 }

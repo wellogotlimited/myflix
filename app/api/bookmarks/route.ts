@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { BookmarkModel, connectToDatabase, serializeDocuments } from "@/lib/db";
+import {
+  BookmarkModel,
+  UpcomingReminderModel,
+  connectToDatabase,
+  serializeDocuments,
+} from "@/lib/db";
+import { syncDefaultCollectionItem } from "@/lib/collections";
 import { requireProfile } from "@/lib/session";
 
 const addSchema = z.object({
@@ -48,6 +54,41 @@ export async function POST(req: Request) {
     { upsert: true }
   );
 
+  await syncDefaultCollectionItem(
+    profile.accountId,
+    profile.profileId,
+    {
+      tmdbId: parsed.data.tmdbId,
+      mediaType: parsed.data.mediaType,
+      title: parsed.data.title,
+      posterPath: parsed.data.posterPath ?? null,
+      backdropPath: null,
+    },
+    true
+  );
+
+  await UpcomingReminderModel.updateOne(
+    {
+      profileId: profile.profileId,
+      tmdbId: parsed.data.tmdbId,
+      mediaType: parsed.data.mediaType,
+    },
+    {
+      $set: {
+        title: parsed.data.title,
+        posterPath: parsed.data.posterPath ?? null,
+        reminderType: "new-release",
+      },
+      $setOnInsert: {
+        profileId: profile.profileId,
+        tmdbId: parsed.data.tmdbId,
+        mediaType: parsed.data.mediaType,
+        createdAt: new Date(),
+      },
+    },
+    { upsert: true }
+  );
+
   return NextResponse.json({ ok: true });
 }
 
@@ -62,6 +103,25 @@ export async function DELETE(req: Request) {
 
   await connectToDatabase();
   await BookmarkModel.deleteOne({
+    profileId: profile.profileId,
+    tmdbId: Number(tmdbId),
+    mediaType,
+  });
+
+  await syncDefaultCollectionItem(
+    profile.accountId,
+    profile.profileId,
+    {
+      tmdbId: Number(tmdbId),
+      mediaType,
+      title: "",
+      posterPath: null,
+      backdropPath: null,
+    },
+    false
+  );
+
+  await UpcomingReminderModel.deleteOne({
     profileId: profile.profileId,
     tmdbId: Number(tmdbId),
     mediaType,

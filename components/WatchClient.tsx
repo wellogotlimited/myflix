@@ -1152,6 +1152,7 @@ export default function WatchClient({
             <WatchPartyPanel
               tmdbId={Number(activeMedia.tmdbId)}
               mediaType={activeMedia.type === "movie" ? "movie" : "tv"}
+              title={activeTitle}
               season={activeMedia.season?.number ?? null}
               episode={activeMedia.episode?.number ?? null}
               currentProfileId={profileId ?? ""}

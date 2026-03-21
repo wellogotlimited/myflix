@@ -10,6 +10,7 @@ import ChatMessage from "./ChatMessage";
 interface Props {
   tmdbId: number;
   mediaType: "movie" | "tv";
+  title: string;
   season?: number | null;
   episode?: number | null;
   currentProfileId: string;
@@ -34,6 +35,7 @@ const DRIFT_THRESHOLD = 1.5;
 export default function WatchPartyPanel({
   tmdbId,
   mediaType,
+  title,
   season,
   episode,
   currentProfileId,
@@ -57,6 +59,7 @@ export default function WatchPartyPanel({
   const [connectionError, setConnectionError] = useState(0);
   const [showJoin, setShowJoin] = useState(false);
   const [leaving, setLeaving] = useState(false);
+  const [scheduledFor, setScheduledFor] = useState("");
   const chatEndRef = useRef<HTMLDivElement>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
   const latestIsPlayingRef = useRef(isPlaying);
@@ -143,6 +146,12 @@ export default function WatchPartyPanel({
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [partyState?.messages.length]);
 
+  useEffect(() => {
+    setScheduledFor(
+      partyState?.scheduledFor ? partyState.scheduledFor.slice(0, 16) : ""
+    );
+  }, [partyState?.scheduledFor]);
+
   async function handleCreateParty() {
     setCreating(true);
     const res = await fetch("/api/party", {
@@ -200,6 +209,51 @@ export default function WatchPartyPanel({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text }),
     });
+  }
+
+  async function handleReaction(emoji: string) {
+    if (!partyCode) return;
+    await fetch(`/api/party/${partyCode}/reaction`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ emoji }),
+    }).catch(() => null);
+  }
+
+  async function handleScheduleParty() {
+    if (!partyCode || !isHost) return;
+    await fetch(`/api/party/${partyCode}/schedule`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scheduledFor: scheduledFor || null }),
+    }).catch(() => null);
+  }
+
+  async function handleQueueCurrent() {
+    if (!partyCode) return;
+    await fetch(`/api/party/${partyCode}/queue`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        tmdbId,
+        mediaType,
+        season: season ?? null,
+        episode: episode ?? null,
+        title,
+      }),
+    }).catch(() => null);
+  }
+
+  async function handleRemoveQueuedItem(item: WatchPartyState["queue"][number]) {
+    if (!partyCode || !isHost) return;
+    await fetch(`/api/party/${partyCode}/queue`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        tmdbId: item.tmdbId,
+        mediaType: item.mediaType,
+      }),
+    }).catch(() => null);
   }
 
   return (
@@ -270,9 +324,74 @@ export default function WatchPartyPanel({
           <div className="border-b border-white/10 p-4 space-y-3">
             <PartyCodeDisplay code={partyCode} />
             {partyState && <MemberList members={partyState.members} currentProfileId={currentProfileId} />}
+            {partyState?.scheduledFor ? (
+              <p className="text-xs text-white/55">
+                Scheduled for {new Date(partyState.scheduledFor).toLocaleString()}
+              </p>
+            ) : null}
             {connectionError >= 3 && (
               <p className="text-xs text-yellow-400">Connection issues...</p>
             )}
+            <div className="flex flex-wrap gap-2">
+              {["🔥", "😂", "😱", "👏"].map((emoji) => (
+                <button
+                  key={emoji}
+                  type="button"
+                  onClick={() => handleReaction(emoji)}
+                  className="rounded-full bg-white/10 px-3 py-1.5 text-sm text-white transition hover:bg-white/16"
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+            {partyState?.reactions?.length ? (
+              <p className="text-xs text-white/45">
+                Recent reactions: {partyState.reactions.slice(-4).map((reaction) => reaction.emoji).join(" ")}
+              </p>
+            ) : null}
+            {isHost ? (
+              <div className="space-y-2">
+                <input
+                  type="datetime-local"
+                  value={scheduledFor}
+                  onChange={(event) => setScheduledFor(event.target.value)}
+                  className="w-full rounded bg-[#333] px-3 py-2 text-sm text-white outline-none focus:bg-[#454545]"
+                />
+                <button
+                  type="button"
+                  onClick={handleScheduleParty}
+                  className="w-full rounded border border-white/15 py-2 text-xs text-white/75 transition hover:border-white/30 hover:text-white"
+                >
+                  Save start time
+                </button>
+              </div>
+            ) : null}
+            <button
+              type="button"
+              onClick={handleQueueCurrent}
+              className="w-full rounded border border-white/15 py-1.5 text-xs text-white/75 transition hover:border-white/30 hover:text-white"
+            >
+              Add current title to queue
+            </button>
+            {partyState?.queue?.length ? (
+              <div className="space-y-2 rounded bg-[#202020] p-3">
+                <p className="text-xs uppercase tracking-[0.18em] text-white/35">Queue</p>
+                {partyState.queue.map((item) => (
+                  <div key={`${item.mediaType}-${item.tmdbId}-${item.season ?? 0}-${item.episode ?? 0}`} className="flex items-center justify-between gap-3">
+                    <p className="text-xs text-white/75">{item.title}</p>
+                    {isHost ? (
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveQueuedItem(item)}
+                        className="rounded-full bg-white/10 px-2 py-1 text-[11px] text-white/70"
+                      >
+                        Remove
+                      </button>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            ) : null}
             {isHost ? (
               <button
                 onClick={handleEndParty}
