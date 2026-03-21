@@ -47,18 +47,24 @@ export async function upsertPlaybackPreferences(
 ) {
   await connectToDatabase();
   const updatedAt = new Date();
+  const definedPatch = Object.fromEntries(
+    Object.entries(patch).filter(([, value]) => value !== undefined)
+  ) as Partial<PlaybackPreferenceValues>;
+  const insertDefaults = Object.fromEntries(
+    Object.entries(DEFAULT_PLAYBACK_PREFERENCES).filter(([key]) => !(key in definedPatch))
+  );
 
   await PlaybackPreferenceModel.updateOne(
     { accountId, profileId: profileId ?? null },
     {
       $set: {
-        ...patch,
+        ...definedPatch,
         updatedAt,
       },
       $setOnInsert: {
         accountId,
         profileId: profileId ?? null,
-        ...DEFAULT_PLAYBACK_PREFERENCES,
+        ...insertDefaults,
       },
     },
     { upsert: true }

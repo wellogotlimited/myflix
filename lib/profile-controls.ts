@@ -3,7 +3,6 @@ import {
   HiddenTitleModel,
   ParentalRuleModel,
   WatchProgressModel,
-  type HiddenTitleDoc,
   type ParentalRuleDoc,
 } from "@/lib/db";
 
@@ -33,16 +32,23 @@ export async function upsertParentalRule(
   patch: Partial<Omit<ParentalRuleDoc, "_id" | "profileId" | "updatedAt">>
 ) {
   await connectToDatabase();
+  const definedPatch = Object.fromEntries(
+    Object.entries(patch).filter(([, value]) => value !== undefined)
+  ) as Partial<Omit<ParentalRuleDoc, "_id" | "profileId" | "updatedAt">>;
+  const insertDefaults = Object.fromEntries(
+    Object.entries(DEFAULT_PARENTAL_RULE).filter(([key]) => !(key in definedPatch))
+  );
+
   await ParentalRuleModel.updateOne(
     { profileId },
     {
       $set: {
-        ...patch,
+        ...definedPatch,
         updatedAt: new Date(),
       },
       $setOnInsert: {
         profileId,
-        ...DEFAULT_PARENTAL_RULE,
+        ...insertDefaults,
       },
     },
     { upsert: true }
