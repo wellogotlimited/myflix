@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
   const { tmdbId, mediaType, rating, genreIds = [] } = body as {
     tmdbId: number;
     mediaType: "movie" | "tv";
-    rating: "up" | "down" | null;
+    rating: "up" | "down" | "love" | null;
     genreIds?: number[];
   };
 
@@ -45,33 +45,52 @@ export async function POST(request: NextRequest) {
 
   await connectToDatabase();
 
+  const existing = await RatingModel.findOne({
+    profileId: profile.profileId,
+    tmdbId,
+    mediaType,
+  }).lean();
+
+  const scoreByRating = {
+    down: -3,
+    up: 5,
+    love: 8,
+    null: 0,
+  } as const;
+
+  const previousRating = existing?.rating ?? null;
+
   if (rating === null) {
     await RatingModel.deleteOne({
       profileId: profile.profileId,
       tmdbId,
       mediaType,
     });
-    return NextResponse.json({ ok: true });
+  } else {
+    await RatingModel.findOneAndUpdate(
+      { profileId: profile.profileId, tmdbId, mediaType },
+      { $set: { rating, ratedAt: new Date() } },
+      { upsert: true }
+    );
   }
 
-  await RatingModel.findOneAndUpdate(
-    { profileId: profile.profileId, tmdbId, mediaType },
-    { $set: { rating, ratedAt: new Date() } },
-    { upsert: true }
-  );
-
-  // Adjust genre affinity: thumbs up boosts, thumbs down reduces
   if (genreIds.length > 0) {
-    const delta = rating === "up" ? 5 : -3;
-    await Promise.all(
-      genreIds.map((genreId: number) =>
-        GenreAffinityModel.findOneAndUpdate(
-          { profileId: profile.profileId, genreId },
-          { $inc: { score: delta } },
-          { upsert: true, setDefaultsOnInsert: true }
+    const nextScore = rating === null ? scoreByRating.null : scoreByRating[rating];
+    const previousScore =
+      previousRating === null ? scoreByRating.null : scoreByRating[previousRating];
+    const delta = nextScore - previousScore;
+
+    if (delta !== 0) {
+      await Promise.all(
+        genreIds.map((genreId: number) =>
+          GenreAffinityModel.findOneAndUpdate(
+            { profileId: profile.profileId, genreId },
+            { $inc: { score: delta } },
+            { upsert: true, setDefaultsOnInsert: true }
+          )
         )
-      )
-    );
+      );
+    }
   }
 
   return NextResponse.json({ ok: true });

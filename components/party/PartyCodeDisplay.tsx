@@ -7,7 +7,11 @@ export default function PartyCodeDisplay({ code }: { code: string }) {
   const [copied, setCopied] = useState(false);
 
   async function handleCopy() {
-    await navigator.clipboard.writeText(code);
+    const invite =
+      typeof window === "undefined"
+        ? code
+        : `${window.location.origin}${window.location.pathname}?party=${code}`;
+    await navigator.clipboard.writeText(invite);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
@@ -23,7 +27,7 @@ export default function PartyCodeDisplay({ code }: { code: string }) {
         className="flex items-center gap-1.5 rounded px-2 py-1.5 text-xs text-gray-400 transition hover:bg-white/10 hover:text-white"
       >
         {copied ? <Check size={14} /> : <Copy size={14} />}
-        {copied ? "Copied!" : "Copy"}
+        {copied ? "Copied!" : "Copy Invite"}
       </button>
     </div>
   );

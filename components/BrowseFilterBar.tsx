@@ -47,6 +47,46 @@ const RATING_OPTIONS = [
   { value: "8", label: "8+" },
 ];
 
+const LANGUAGE_OPTIONS = [
+  { value: "", label: "Any Language" },
+  { value: "en", label: "English" },
+  { value: "ja", label: "Japanese" },
+  { value: "ko", label: "Korean" },
+  { value: "es", label: "Spanish" },
+  { value: "fr", label: "French" },
+];
+
+const RUNTIME_OPTIONS = [
+  { value: "", label: "Any Length" },
+  { value: "short", label: "Under 100m" },
+  { value: "medium", label: "100-140m" },
+  { value: "long", label: "140m+" },
+];
+
+const YEAR_OPTIONS = [
+  { value: "", label: "Any Year" },
+  { value: "2026", label: "2026" },
+  { value: "2025", label: "2025" },
+  { value: "2024", label: "2024" },
+  { value: "2023", label: "2023" },
+  { value: "2022", label: "2022" },
+];
+
+const NETWORK_OPTIONS = [
+  { value: "", label: "Any Network" },
+  { value: "213", label: "Netflix" },
+  { value: "49", label: "HBO" },
+  { value: "2552", label: "Apple TV+" },
+  { value: "2739", label: "Disney+" },
+  { value: "453", label: "Hulu" },
+];
+
+const STATUS_OPTIONS = [
+  { value: "", label: "Any Status" },
+  { value: "0", label: "Ended" },
+  { value: "2", label: "Returning" },
+];
+
 export default function BrowseFilterBar({
   contentType,
 }: {
@@ -59,6 +99,11 @@ export default function BrowseFilterBar({
   const genre = searchParams.get("genre") ?? "";
   const sort = searchParams.get("sort") ?? "popularity.desc";
   const minRating = searchParams.get("minRating") ?? "";
+  const year = searchParams.get("year") ?? "";
+  const language = searchParams.get("language") ?? "";
+  const runtime = searchParams.get("runtime") ?? "";
+  const network = searchParams.get("network") ?? "";
+  const status = searchParams.get("status") ?? "";
 
   const setParam = useCallback(
     (key: string, value: string | null) => {
@@ -140,6 +185,72 @@ export default function BrowseFilterBar({
             </button>
           ))}
         </div>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <select
+          value={year}
+          onChange={(e) => setParam("year", e.target.value || null)}
+          className="rounded-lg bg-white/10 px-3 py-2 text-sm font-medium text-white outline-none transition hover:bg-white/16"
+        >
+          {YEAR_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value} className="bg-[#181818]">
+              {opt.label}
+            </option>
+          ))}
+        </select>
+
+        <select
+          value={language}
+          onChange={(e) => setParam("language", e.target.value || null)}
+          className="rounded-lg bg-white/10 px-3 py-2 text-sm font-medium text-white outline-none transition hover:bg-white/16"
+        >
+          {LANGUAGE_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value} className="bg-[#181818]">
+              {opt.label}
+            </option>
+          ))}
+        </select>
+
+        <select
+          value={runtime}
+          onChange={(e) => setParam("runtime", e.target.value || null)}
+          className="rounded-lg bg-white/10 px-3 py-2 text-sm font-medium text-white outline-none transition hover:bg-white/16"
+        >
+          {RUNTIME_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value} className="bg-[#181818]">
+              {opt.label}
+            </option>
+          ))}
+        </select>
+
+        {contentType === "tv" && (
+          <>
+            <select
+              value={network}
+              onChange={(e) => setParam("network", e.target.value || null)}
+              className="rounded-lg bg-white/10 px-3 py-2 text-sm font-medium text-white outline-none transition hover:bg-white/16"
+            >
+              {NETWORK_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value} className="bg-[#181818]">
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={status}
+              onChange={(e) => setParam("status", e.target.value || null)}
+              className="rounded-lg bg-white/10 px-3 py-2 text-sm font-medium text-white outline-none transition hover:bg-white/16"
+            >
+              {STATUS_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value} className="bg-[#181818]">
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </>
+        )}
       </div>
     </div>
   );

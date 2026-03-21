@@ -149,6 +149,64 @@ export async function DELETE(
   return NextResponse.json({ ok: true });
 }
 
+export async function PATCH(
+  req: Request,
+  { params }: { params: Promise<{ tmdbId: string }> }
+) {
+  const profile = await requireProfile();
+  if (!profile) return NextResponse.json({ error: "No active profile" }, { status: 401 });
+
+  const { tmdbId } = await params;
+  const body = await req.json().catch(() => ({}));
+  const action = body.action as "restart" | "mark-watched" | "remove" | undefined;
+  if (!action) {
+    return NextResponse.json({ error: "Action required" }, { status: 400 });
+  }
+
+  await connectToDatabase();
+
+  if (action === "remove") {
+    await WatchProgressModel.deleteMany({
+      profileId: profile.profileId,
+      tmdbId: Number(tmdbId),
+    });
+    return NextResponse.json({ ok: true });
+  }
+
+  if (action === "restart") {
+    await WatchProgressModel.updateMany(
+      {
+        profileId: profile.profileId,
+        tmdbId: Number(tmdbId),
+      },
+      {
+        $set: {
+          positionSec: 0,
+          completed: false,
+          updatedAt: new Date(),
+        },
+      }
+    );
+    return NextResponse.json({ ok: true });
+  }
+
+  await WatchProgressModel.updateMany(
+    {
+      profileId: profile.profileId,
+      tmdbId: Number(tmdbId),
+    },
+    {
+      $set: {
+        positionSec: 0,
+        completed: true,
+        updatedAt: new Date(),
+      },
+    }
+  );
+
+  return NextResponse.json({ ok: true });
+}
+
 async function updateGenreAffinity(profileId: string, genreIds: number[]) {
   await Promise.all(
     genreIds.map((genreId) =>

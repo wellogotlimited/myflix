@@ -4,7 +4,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Play, SpeakerSimpleHigh, SpeakerSimpleSlash, X } from "@phosphor-icons/react";
-import { TMDBItem, backdropUrl, getMediaType, getTitle, getYear } from "@/lib/tmdb";
+import MediaDetailsModal from "@/components/MediaDetailsModal";
+import { TMDBItem, backdropUrl, getMediaType, getTitle } from "@/lib/tmdb";
 
 export default function Hero({
   item,
@@ -18,6 +19,8 @@ export default function Hero({
   const [trailerOpen, setTrailerOpen] = useState(false);
   const [bgVideoVisible, setBgVideoVisible] = useState(false);
   const [muted, setMuted] = useState(true);
+  const [summaryVisible, setSummaryVisible] = useState(true);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const type = getMediaType(item);
   const title = getTitle(item);
   const bg = backdropUrl(item.backdrop_path, "original");
@@ -26,10 +29,16 @@ export default function Hero({
   useEffect(() => {
     setBgVideoVisible(false);
     setMuted(true);
+    setSummaryVisible(true);
     if (!trailerKey) return;
     const timer = setTimeout(() => setBgVideoVisible(true), 3500);
     return () => clearTimeout(timer);
   }, [item.id, trailerKey]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setSummaryVisible(false), 5000);
+    return () => clearTimeout(timer);
+  }, [item.id]);
 
   const bgVideoSrc = trailerKey
     ? `https://www.youtube-nocookie.com/embed/${trailerKey}?autoplay=1&mute=${muted ? 1 : 0}&controls=0&loop=1&playlist=${trailerKey}&rel=0&modestbranding=1&playsinline=1&fs=0&iv_load_policy=3&disablekb=1`
@@ -72,7 +81,11 @@ export default function Hero({
         <div className="absolute inset-x-6 bottom-24 z-10 md:left-12 md:right-12">
           <div className="max-w-2xl">
             {logo ? (
-              <div className="relative mb-6 h-28 w-full max-w-[32rem] md:h-32">
+              <div
+                className={`relative h-28 w-full max-w-[32rem] transition-[margin] duration-700 md:h-32 ${
+                  summaryVisible ? "mb-6" : "mb-3"
+                }`}
+              >
                 <Image
                   src={logo}
                   alt={title}
@@ -83,35 +96,49 @@ export default function Hero({
                 />
               </div>
             ) : (
-              <h1 className="mb-4 text-5xl font-black text-white drop-shadow-lg md:text-7xl">
+              <h1
+                className={`text-5xl font-black text-white drop-shadow-lg transition-[margin] duration-700 md:text-7xl ${
+                  summaryVisible ? "mb-4" : "mb-2"
+                }`}
+              >
                 {title}
               </h1>
             )}
 
-            <div className="mb-5 flex items-center gap-3 text-sm text-white/72">
-              {getYear(item) && <span>{getYear(item)}</span>}
-              <span className="rounded-full bg-white/10 px-2.5 py-1 text-xs uppercase tracking-[0.16em]">
-                {type === "movie" ? "Movie" : "Series"}
-              </span>
+            <div
+              className={`overflow-hidden transition-all duration-700 ${
+                summaryVisible ? "max-h-32 opacity-100" : "max-h-0 opacity-0"
+              }`}
+            >
+              <p className="max-w-xl pb-1 text-sm leading-6 text-white/78 md:text-base md:leading-7">
+                {item.overview}
+              </p>
             </div>
 
-            <p className="max-w-xl text-sm leading-6 text-white/78 md:text-base md:leading-7">
-              {item.overview}
-            </p>
-
-            <div className="mt-7 flex flex-wrap items-center gap-3">
+            <div
+              className={`flex flex-wrap items-center gap-3 transition-[margin] duration-700 ${
+                summaryVisible ? "mt-7" : "mt-3"
+              }`}
+            >
               <Link
                 href={`/watch/${type}/${item.id}`}
-                className="inline-flex items-center gap-2 rounded-full bg-white px-6 py-3 text-sm font-semibold text-black transition hover:bg-white/90"
+                className="inline-flex items-center gap-2 rounded-md bg-white px-6 py-3 text-sm font-semibold text-black transition hover:bg-white/90"
               >
                 <Play size={18} weight="fill" />
                 Play
               </Link>
+              <button
+                type="button"
+                onClick={() => setDetailsOpen(true)}
+                className="inline-flex items-center gap-2 rounded-md border border-white/18 bg-white/8 px-6 py-3 text-sm font-semibold text-white transition hover:bg-white/14"
+              >
+                More Info
+              </button>
               {trailerKey && !bgVideoVisible && (
                 <button
                   type="button"
                   onClick={() => setTrailerOpen(true)}
-                  className="rounded-full border border-white/18 bg-white/8 px-6 py-3 text-sm font-semibold text-white transition hover:bg-white/14"
+                  className="rounded-md border border-white/18 bg-white/8 px-6 py-3 text-sm font-semibold text-white transition hover:bg-white/14"
                 >
                   Watch Trailer
                 </button>
@@ -121,19 +148,30 @@ export default function Hero({
         </div>
 
         {bgVideoSrc && bgVideoVisible && (
-          <button
-            type="button"
-            onClick={() => setMuted((m) => !m)}
-            className="absolute bottom-24 right-6 z-10 rounded-full border border-white/25 bg-black/40 p-3 text-white backdrop-blur-sm transition hover:bg-black/60 md:right-12"
-            title={muted ? "Unmute" : "Mute"}
-          >
-            {muted
-              ? <SpeakerSimpleSlash size={20} weight="bold" />
-              : <SpeakerSimpleHigh size={20} weight="bold" />
-            }
-          </button>
+          <div className="absolute bottom-24 right-6 z-10 flex items-center gap-2 md:right-12">
+            {item.maturityRating ? (
+              <span className="rounded border border-white/25 bg-black/35 px-2 py-1 text-[11px] font-semibold tracking-[0.14em] text-white/78 backdrop-blur-sm">
+                {item.maturityRating}
+              </span>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => setMuted((m) => !m)}
+              className="rounded-full border border-white/25 bg-black/40 p-2 text-white backdrop-blur-sm transition hover:bg-black/60"
+              title={muted ? "Unmute" : "Mute"}
+            >
+              {muted
+                ? <SpeakerSimpleSlash size={16} weight="bold" />
+                : <SpeakerSimpleHigh size={16} weight="bold" />
+              }
+            </button>
+          </div>
         )}
       </section>
+
+      {detailsOpen ? (
+        <MediaDetailsModal item={item} open={detailsOpen} onClose={() => setDetailsOpen(false)} />
+      ) : null}
 
       {trailerOpen && trailerKey && (
         <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/85 p-6 backdrop-blur-sm">

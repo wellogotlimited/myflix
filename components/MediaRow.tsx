@@ -4,11 +4,13 @@ import MediaCard from "./MediaCard";
 export default function MediaRow({
   id,
   title,
+  subtitle,
   items,
   portrait = false,
 }: {
   id?: string;
   title: string;
+  subtitle?: string;
   items: TMDBItem[];
   portrait?: boolean;
 }) {
@@ -16,10 +18,13 @@ export default function MediaRow({
 
   return (
     <section id={id} className="scroll-mt-28">
-      <h2 className="mb-3 px-4 text-lg font-semibold text-white md:px-8 md:text-xl">
-        {title}
-      </h2>
-      <div className="-my-6 flex gap-2.5 overflow-x-auto overflow-y-visible px-4 py-6 scrollbar-hide md:px-8">
+      <div className="mb-2.5 px-4 md:px-8">
+        <h2 className="text-lg font-semibold text-white md:text-xl">{title}</h2>
+        {subtitle ? (
+          <p className="mt-1 text-sm text-white/45">{subtitle}</p>
+        ) : null}
+      </div>
+      <div className="-my-5 flex gap-2 overflow-x-auto overflow-y-visible px-4 py-5 scrollbar-hide md:px-8">
         {items.map((item) => (
           <MediaCard key={item.id} item={item} portrait={portrait} />
         ))}

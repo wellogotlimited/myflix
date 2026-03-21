@@ -60,6 +60,9 @@ export async function POST(req: Request) {
       },
     ],
     messages: [],
+    reactions: [],
+    queue: [],
+    scheduledFor: null,
     createdAt: now,
   });
 

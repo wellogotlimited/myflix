@@ -4,10 +4,10 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { BookmarkSimple, CaretRight, Play } from "@phosphor-icons/react";
+import { CaretRight, Play } from "@phosphor-icons/react";
 import MediaDetailsModal from "./MediaDetailsModal";
 import RatingButtons from "./RatingButtons";
-import { useMyList } from "@/lib/my-list";
+import SaveButton from "./SaveButton";
 import { useResumeProgress } from "@/lib/use-resume-progress";
 import { useMediaDetails } from "@/lib/use-media-details";
 import { TMDBItem, backdropUrl, posterUrl, getMediaType } from "@/lib/tmdb";
@@ -56,7 +56,6 @@ export default function MediaCard({
     ? posterUrl(item.poster_path, "w342")
     : backdropUrl(item.logo_backdrop_path || item.backdrop_path, "w780");
   const isGrid = layout === "grid";
-  const { isSaved, toggle } = useMyList(item);
   const resumeProgress = useResumeProgress(item, previewOpen);
   const { data: previewData } = useMediaDetails(item, previewOpen);
   const previewTrailerKey = previewData?.trailers?.[0]?.key ?? null;
@@ -71,6 +70,26 @@ export default function MediaCard({
       if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (!previewOpen) return;
+
+    const handleViewportChange = () => {
+      closePreviewNow();
+    };
+
+    window.addEventListener("scroll", handleViewportChange, true);
+    window.addEventListener("wheel", handleViewportChange, { passive: true });
+    window.addEventListener("resize", handleViewportChange);
+    window.addEventListener("touchmove", handleViewportChange, { passive: true });
+
+    return () => {
+      window.removeEventListener("scroll", handleViewportChange, true);
+      window.removeEventListener("wheel", handleViewportChange);
+      window.removeEventListener("resize", handleViewportChange);
+      window.removeEventListener("touchmove", handleViewportChange);
+    };
+  }, [previewOpen]);
 
   const positionPreview = () => {
     if (!cardRef.current || typeof window === "undefined") return;
@@ -135,7 +154,7 @@ export default function MediaCard({
         <button
           type="button"
           onClick={() => setModalOpen(true)}
-          className={`overflow-hidden rounded-md shadow-[0_10px_24px_rgba(0,0,0,0.2)] ${
+          className={`overflow-hidden rounded-sm shadow-[0_10px_24px_rgba(0,0,0,0.2)] ${
             isGrid ? "w-full min-w-0" : "w-28 flex-shrink-0"
           }`}
         >
@@ -148,7 +167,7 @@ export default function MediaCard({
               className="object-cover"
             />
             {showNewBadge && (
-              <div className="absolute bottom-0 left-1/2 -translate-x-1/2 rounded-t-md bg-[#e50914] px-2 py-0.5 text-[9px] sm:px-2.5 sm:py-1 sm:text-[11px] font-bold text-white shadow-md whitespace-nowrap">
+              <div className="absolute bottom-0 left-1/2 -translate-x-1/2 rounded-t-sm bg-[#e50914] px-2 py-0.5 text-[9px] font-bold whitespace-nowrap text-white shadow-md sm:px-2.5 sm:py-1 sm:text-[11px]">
                 Recently Added
               </div>
             )}
@@ -191,7 +210,7 @@ export default function MediaCard({
             closePreviewNow();
             setModalOpen(true);
           }}
-          className={`group relative block overflow-hidden rounded-lg shadow-[0_10px_24px_rgba(0,0,0,0.2)] ${
+          className={`group relative block overflow-hidden rounded-sm shadow-[0_10px_24px_rgba(0,0,0,0.2)] transition-transform duration-200 hover:scale-[0.985] ${
             isGrid ? "w-full" : "w-[280px]"
           }`}
         >
@@ -201,10 +220,10 @@ export default function MediaCard({
               alt=""
               fill
               sizes={isGrid ? "(max-width: 640px) 100vw, (max-width: 768px) 50vw, (max-width: 1024px) 33vw, (max-width: 1280px) 25vw, 20vw" : "280px"}
-              className="object-cover transition-transform duration-300 group-hover:scale-105"
+              className="object-cover"
             />
             {isNewRelease(item) && (
-              <div className="absolute bottom-0 left-1/2 -translate-x-1/2 rounded-t-md bg-[#e50914] px-2 py-0.5 text-[9px] sm:px-2.5 sm:py-1 sm:text-[11px] font-bold text-white shadow-md whitespace-nowrap">
+              <div className="absolute bottom-0 left-1/2 -translate-x-1/2 rounded-t-sm bg-[#e50914] px-2 py-0.5 text-[9px] font-bold whitespace-nowrap text-white shadow-md sm:px-2.5 sm:py-1 sm:text-[11px]">
                 Recently Added
               </div>
             )}
@@ -222,7 +241,7 @@ export default function MediaCard({
         typeof document !== "undefined" &&
         createPortal(
           <div
-            className="fixed z-[80] w-[332px] overflow-hidden rounded-lg border border-white/10 bg-[#181818] shadow-[0_24px_80px_rgba(0,0,0,0.45)]"
+            className="fixed z-[80] w-[332px] overflow-hidden rounded-sm border border-white/10 bg-[#181818] shadow-[0_24px_80px_rgba(0,0,0,0.45)]"
             style={{ top: previewRect.top, left: previewRect.left }}
             onMouseEnter={openPreview}
             onMouseLeave={scheduleClosePreview}
@@ -268,17 +287,7 @@ export default function MediaCard({
                   >
                     <Play size={16} weight="fill" />
                   </Link>
-                  <button
-                    type="button"
-                    onClick={toggle}
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white transition hover:bg-white/16"
-                    title={isSaved ? "Remove from My List" : "Add to My List"}
-                  >
-                    <BookmarkSimple
-                      size={16}
-                      weight={isSaved ? "fill" : "regular"}
-                    />
-                  </button>
+                  <SaveButton item={item} size="sm" />
                   <RatingButtons item={item} />
                 </div>
 

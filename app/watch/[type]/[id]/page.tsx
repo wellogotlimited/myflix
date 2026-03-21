@@ -4,6 +4,7 @@ import { requireProfile } from "@/lib/session";
 import { passesMaturityFilter } from "@/lib/maturity";
 import WatchClient from "@/components/WatchClient";
 import MaturityBlocked from "@/components/MaturityBlocked";
+import { getParentalRule, hasReachedSessionLimit, isBlockedByParentalRule, isCurrentlyInBedtime } from "@/lib/profile-controls";
 
 interface WatchPageProps {
   params: Promise<{ type: string; id: string }>;
@@ -22,9 +23,15 @@ export default async function WatchPage({ params, searchParams }: WatchPageProps
       requireProfile(),
       getContentRating(id, "movie"),
     ]);
+    const parentalRule = await getParentalRule(profile.profileId);
 
     const maturityLevel = profile?.maturityLevel ?? "ADULT";
-    if (!passesMaturityFilter(rating, maturityLevel)) {
+    if (
+      !passesMaturityFilter(rating, maturityLevel) ||
+      isBlockedByParentalRule(parentalRule, Number(id)) ||
+      isCurrentlyInBedtime(parentalRule) ||
+      (await hasReachedSessionLimit(profile.profileId, parentalRule.sessionLimitMinutes))
+    ) {
       return <MaturityBlocked title={movie.title} backdropPath={movie.backdrop_path} />;
     }
 
@@ -53,9 +60,15 @@ export default async function WatchPage({ params, searchParams }: WatchPageProps
     requireProfile(),
     getContentRating(id, "tv"),
   ]);
+  const parentalRule = await getParentalRule(profile.profileId);
 
   const maturityLevel = profile?.maturityLevel ?? "ADULT";
-  if (!passesMaturityFilter(rating, maturityLevel)) {
+  if (
+    !passesMaturityFilter(rating, maturityLevel) ||
+    isBlockedByParentalRule(parentalRule, Number(id)) ||
+    isCurrentlyInBedtime(parentalRule) ||
+    (await hasReachedSessionLimit(profile.profileId, parentalRule.sessionLimitMinutes))
+  ) {
     return <MaturityBlocked title={show.name} backdropPath={show.backdrop_path} />;
   }
 

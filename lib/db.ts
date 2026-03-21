@@ -8,8 +8,6 @@ function getMongoUri() {
   return value;
 }
 
-const uri = getMongoUri();
-
 const dbName = process.env.MONGODB_DB ?? "myflix";
 
 declare global {
@@ -95,6 +93,22 @@ export interface WatchPartyMessageDoc {
   sentAt: Date;
 }
 
+export interface WatchPartyReactionDoc {
+  profileId: string;
+  emoji: string;
+  sentAt: Date;
+}
+
+export interface WatchPartyQueueItemDoc {
+  tmdbId: number;
+  mediaType: "movie" | "tv";
+  season?: number | null;
+  episode?: number | null;
+  title: string;
+  addedByProfileId: string;
+  addedAt: Date;
+}
+
 export interface WatchPartyDoc {
   _id: string;
   code: string;
@@ -108,6 +122,9 @@ export interface WatchPartyDoc {
   lastUpdatedAt: Date;
   members: WatchPartyMemberDoc[];
   messages: WatchPartyMessageDoc[];
+  reactions: WatchPartyReactionDoc[];
+  queue: WatchPartyQueueItemDoc[];
+  scheduledFor?: Date | null;
   createdAt: Date;
 }
 
@@ -168,8 +185,159 @@ export interface RatingDoc {
   profileId: string;
   tmdbId: number;
   mediaType: "movie" | "tv";
-  rating: "up" | "down";
+  rating: "up" | "down" | "love";
   ratedAt: Date;
+}
+
+export interface CollectionDoc {
+  _id: string;
+  accountId: string;
+  profileId: string;
+  name: string;
+  slug: string;
+  isDefault: boolean;
+  isPinned: boolean;
+  isShared: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface CollectionItemDoc {
+  _id: string;
+  collectionId: string;
+  profileId: string;
+  tmdbId: number;
+  mediaType: "movie" | "tv";
+  title: string;
+  posterPath?: string | null;
+  backdropPath?: string | null;
+  rank: number;
+  addedAt: Date;
+}
+
+export interface RecentSearchDoc {
+  _id: string;
+  profileId: string;
+  query: string;
+  normalizedQuery: string;
+  count: number;
+  lastUsedAt: Date;
+}
+
+export interface UpcomingReminderDoc {
+  _id: string;
+  profileId: string;
+  tmdbId: number;
+  mediaType: "movie" | "tv";
+  title: string;
+  posterPath?: string | null;
+  reminderType: "new-release" | "new-episode" | "watch-party";
+  createdAt: Date;
+  lastNotifiedAt?: Date | null;
+}
+
+export interface NotificationSubscriptionDoc {
+  _id: string;
+  accountId: string;
+  profileId?: string | null;
+  permission: "default" | "granted" | "denied";
+  endpoint?: string | null;
+  browserSupported: boolean;
+  pushEnabled: boolean;
+  userAgent?: string | null;
+  updatedAt: Date;
+}
+
+export interface NotificationEventDoc {
+  _id: string;
+  accountId: string;
+  profileId?: string | null;
+  kind: "reminder" | "recommendation" | "system" | "social" | "party" | "download";
+  title: string;
+  body: string;
+  href?: string | null;
+  readAt?: Date | null;
+  createdAt: Date;
+}
+
+export interface PlaybackPreferenceDoc {
+  _id: string;
+  accountId: string;
+  profileId?: string | null;
+  proxyEnabled: boolean;
+  devMode: boolean;
+  autoplayNextEpisode: boolean;
+  preferredQuality: string;
+  subtitleLanguage: string;
+  audioLanguage: string;
+  captionsEnabled: boolean;
+  subtitleDelay: number;
+  subtitleFontScale: number;
+  reducedMotion: boolean;
+  largerControls: boolean;
+  highContrast: boolean;
+  keyboardShortcuts: boolean;
+  updatedAt: Date;
+}
+
+export interface ParentalRuleDoc {
+  _id: string;
+  profileId: string;
+  blockedTmdbIds: number[];
+  allowedTmdbIds: number[];
+  allowOnlyMode: boolean;
+  safeSearch: boolean;
+  hideMatureArtwork: boolean;
+  sessionLimitMinutes?: number | null;
+  bedtimeStart?: string | null;
+  bedtimeEnd?: string | null;
+  updatedAt: Date;
+}
+
+export interface HiddenTitleDoc {
+  _id: string;
+  profileId: string;
+  tmdbId: number;
+  mediaType: "movie" | "tv";
+  reason?: string | null;
+  hiddenAt: Date;
+}
+
+export interface DeviceSessionDoc {
+  _id: string;
+  accountId: string;
+  profileId?: string | null;
+  sessionKey: string;
+  label: string;
+  userAgent: string;
+  lastPath?: string | null;
+  lastSeenAt: Date;
+  createdAt: Date;
+  trusted: boolean;
+}
+
+export interface DownloadJobDoc {
+  _id: string;
+  profileId: string;
+  tmdbId: number;
+  mediaType: "movie" | "tv";
+  title: string;
+  posterPath?: string | null;
+  seasonNumber?: number | null;
+  episodeNumber?: number | null;
+  episodeTitle?: string | null;
+  status: "queued" | "downloading" | "paused" | "completed" | "failed" | "unsupported";
+  progressPct: number;
+  reason?: string | null;
+  requestedAt: Date;
+  updatedAt: Date;
+}
+
+export interface SocialFollowDoc {
+  _id: string;
+  followerProfileId: string;
+  followeeProfileId: string;
+  createdAt: Date;
 }
 
 type AccountFields = Omit<AccountDoc, "_id">;
@@ -182,6 +350,18 @@ type WatchPartyFields = Omit<WatchPartyDoc, "_id">;
 type DevicePairingFields = Omit<DevicePairingDoc, "_id">;
 type TvReceiverFields = Omit<TvReceiverDoc, "_id">;
 type RatingFields = Omit<RatingDoc, "_id">;
+type CollectionFields = Omit<CollectionDoc, "_id">;
+type CollectionItemFields = Omit<CollectionItemDoc, "_id">;
+type RecentSearchFields = Omit<RecentSearchDoc, "_id">;
+type UpcomingReminderFields = Omit<UpcomingReminderDoc, "_id">;
+type NotificationSubscriptionFields = Omit<NotificationSubscriptionDoc, "_id">;
+type NotificationEventFields = Omit<NotificationEventDoc, "_id">;
+type PlaybackPreferenceFields = Omit<PlaybackPreferenceDoc, "_id">;
+type ParentalRuleFields = Omit<ParentalRuleDoc, "_id">;
+type HiddenTitleFields = Omit<HiddenTitleDoc, "_id">;
+type DeviceSessionFields = Omit<DeviceSessionDoc, "_id">;
+type DownloadJobFields = Omit<DownloadJobDoc, "_id">;
+type SocialFollowFields = Omit<SocialFollowDoc, "_id">;
 
 const accountSchema = new Schema<AccountFields>(
   {
@@ -285,6 +465,28 @@ const watchPartyMessageSchema = new Schema<WatchPartyMessageDoc>(
   { _id: false, versionKey: false }
 );
 
+const watchPartyReactionSchema = new Schema<WatchPartyReactionDoc>(
+  {
+    profileId: { type: String, required: true },
+    emoji: { type: String, required: true },
+    sentAt: { type: Date, required: true },
+  },
+  { _id: false, versionKey: false }
+);
+
+const watchPartyQueueItemSchema = new Schema<WatchPartyQueueItemDoc>(
+  {
+    tmdbId: { type: Number, required: true },
+    mediaType: { type: String, enum: ["movie", "tv"], required: true },
+    season: { type: Number, default: null },
+    episode: { type: Number, default: null },
+    title: { type: String, required: true },
+    addedByProfileId: { type: String, required: true },
+    addedAt: { type: Date, required: true },
+  },
+  { _id: false, versionKey: false }
+);
+
 const watchPartySchema = new Schema<WatchPartyFields>(
   {
     code: { type: String, required: true, unique: true },
@@ -298,6 +500,9 @@ const watchPartySchema = new Schema<WatchPartyFields>(
     lastUpdatedAt: { type: Date, required: true },
     members: { type: [watchPartyMemberSchema], default: [] },
     messages: { type: [watchPartyMessageSchema], default: [] },
+    reactions: { type: [watchPartyReactionSchema], default: [] },
+    queue: { type: [watchPartyQueueItemSchema], default: [] },
+    scheduledFor: { type: Date, default: null },
     createdAt: { type: Date, required: true },
   },
   { versionKey: false }
@@ -382,12 +587,218 @@ const ratingSchema = new Schema<RatingFields>(
     profileId: { type: String, required: true, index: true },
     tmdbId: { type: Number, required: true },
     mediaType: { type: String, enum: ["movie", "tv"], required: true },
-    rating: { type: String, enum: ["up", "down"], required: true },
+    rating: { type: String, enum: ["up", "down", "love"], required: true },
     ratedAt: { type: Date, required: true },
   },
   { versionKey: false }
 );
 ratingSchema.index({ profileId: 1, tmdbId: 1, mediaType: 1 }, { unique: true });
+
+const collectionSchema = new Schema<CollectionFields>(
+  {
+    accountId: { type: String, required: true, index: true },
+    profileId: { type: String, required: true, index: true },
+    name: { type: String, required: true },
+    slug: { type: String, required: true },
+    isDefault: { type: Boolean, required: true, default: false },
+    isPinned: { type: Boolean, required: true, default: false },
+    isShared: { type: Boolean, required: true, default: false },
+    createdAt: { type: Date, required: true },
+    updatedAt: { type: Date, required: true },
+  },
+  { versionKey: false }
+);
+collectionSchema.index({ profileId: 1, slug: 1 }, { unique: true });
+
+const collectionItemSchema = new Schema<CollectionItemFields>(
+  {
+    collectionId: { type: String, required: true, index: true },
+    profileId: { type: String, required: true, index: true },
+    tmdbId: { type: Number, required: true },
+    mediaType: { type: String, enum: ["movie", "tv"], required: true },
+    title: { type: String, required: true },
+    posterPath: { type: String, default: null },
+    backdropPath: { type: String, default: null },
+    rank: { type: Number, required: true, default: 0 },
+    addedAt: { type: Date, required: true },
+  },
+  { versionKey: false }
+);
+collectionItemSchema.index({ collectionId: 1, tmdbId: 1, mediaType: 1 }, { unique: true });
+
+const recentSearchSchema = new Schema<RecentSearchFields>(
+  {
+    profileId: { type: String, required: true, index: true },
+    query: { type: String, required: true },
+    normalizedQuery: { type: String, required: true },
+    count: { type: Number, required: true, default: 1 },
+    lastUsedAt: { type: Date, required: true },
+  },
+  { versionKey: false }
+);
+recentSearchSchema.index({ profileId: 1, normalizedQuery: 1 }, { unique: true });
+
+const upcomingReminderSchema = new Schema<UpcomingReminderFields>(
+  {
+    profileId: { type: String, required: true, index: true },
+    tmdbId: { type: Number, required: true },
+    mediaType: { type: String, enum: ["movie", "tv"], required: true },
+    title: { type: String, required: true },
+    posterPath: { type: String, default: null },
+    reminderType: {
+      type: String,
+      enum: ["new-release", "new-episode", "watch-party"],
+      required: true,
+      default: "new-release",
+    },
+    createdAt: { type: Date, required: true },
+    lastNotifiedAt: { type: Date, default: null },
+  },
+  { versionKey: false }
+);
+upcomingReminderSchema.index({ profileId: 1, tmdbId: 1, mediaType: 1 }, { unique: true });
+
+const notificationSubscriptionSchema = new Schema<NotificationSubscriptionFields>(
+  {
+    accountId: { type: String, required: true, index: true },
+    profileId: { type: String, default: null, index: true },
+    permission: {
+      type: String,
+      enum: ["default", "granted", "denied"],
+      required: true,
+      default: "default",
+    },
+    endpoint: { type: String, default: null },
+    browserSupported: { type: Boolean, required: true, default: false },
+    pushEnabled: { type: Boolean, required: true, default: false },
+    userAgent: { type: String, default: null },
+    updatedAt: { type: Date, required: true },
+  },
+  { versionKey: false }
+);
+notificationSubscriptionSchema.index({ accountId: 1, profileId: 1 }, { unique: true });
+
+const notificationEventSchema = new Schema<NotificationEventFields>(
+  {
+    accountId: { type: String, required: true, index: true },
+    profileId: { type: String, default: null, index: true },
+    kind: {
+      type: String,
+      enum: ["reminder", "recommendation", "system", "social", "party", "download"],
+      required: true,
+    },
+    title: { type: String, required: true },
+    body: { type: String, required: true },
+    href: { type: String, default: null },
+    readAt: { type: Date, default: null },
+    createdAt: { type: Date, required: true, index: true },
+  },
+  { versionKey: false }
+);
+
+const playbackPreferenceSchema = new Schema<PlaybackPreferenceFields>(
+  {
+    accountId: { type: String, required: true, index: true },
+    profileId: { type: String, default: null, index: true },
+    proxyEnabled: { type: Boolean, required: true, default: false },
+    devMode: { type: Boolean, required: true, default: false },
+    autoplayNextEpisode: { type: Boolean, required: true, default: true },
+    preferredQuality: { type: String, required: true, default: "auto" },
+    subtitleLanguage: { type: String, required: true, default: "off" },
+    audioLanguage: { type: String, required: true, default: "default" },
+    captionsEnabled: { type: Boolean, required: true, default: false },
+    subtitleDelay: { type: Number, required: true, default: 0 },
+    subtitleFontScale: { type: Number, required: true, default: 100 },
+    reducedMotion: { type: Boolean, required: true, default: false },
+    largerControls: { type: Boolean, required: true, default: false },
+    highContrast: { type: Boolean, required: true, default: false },
+    keyboardShortcuts: { type: Boolean, required: true, default: true },
+    updatedAt: { type: Date, required: true },
+  },
+  { versionKey: false }
+);
+playbackPreferenceSchema.index({ accountId: 1, profileId: 1 }, { unique: true });
+
+const parentalRuleSchema = new Schema<ParentalRuleFields>(
+  {
+    profileId: { type: String, required: true, unique: true },
+    blockedTmdbIds: { type: [Number], required: true, default: [] },
+    allowedTmdbIds: { type: [Number], required: true, default: [] },
+    allowOnlyMode: { type: Boolean, required: true, default: false },
+    safeSearch: { type: Boolean, required: true, default: false },
+    hideMatureArtwork: { type: Boolean, required: true, default: false },
+    sessionLimitMinutes: { type: Number, default: null },
+    bedtimeStart: { type: String, default: null },
+    bedtimeEnd: { type: String, default: null },
+    updatedAt: { type: Date, required: true },
+  },
+  { versionKey: false }
+);
+
+const hiddenTitleSchema = new Schema<HiddenTitleFields>(
+  {
+    profileId: { type: String, required: true, index: true },
+    tmdbId: { type: Number, required: true },
+    mediaType: { type: String, enum: ["movie", "tv"], required: true },
+    reason: { type: String, default: null },
+    hiddenAt: { type: Date, required: true },
+  },
+  { versionKey: false }
+);
+hiddenTitleSchema.index({ profileId: 1, tmdbId: 1, mediaType: 1 }, { unique: true });
+
+const deviceSessionSchema = new Schema<DeviceSessionFields>(
+  {
+    accountId: { type: String, required: true, index: true },
+    profileId: { type: String, default: null, index: true },
+    sessionKey: { type: String, required: true, unique: true },
+    label: { type: String, required: true },
+    userAgent: { type: String, required: true },
+    lastPath: { type: String, default: null },
+    lastSeenAt: { type: Date, required: true, index: true },
+    createdAt: { type: Date, required: true },
+    trusted: { type: Boolean, required: true, default: false },
+  },
+  { versionKey: false }
+);
+
+const downloadJobSchema = new Schema<DownloadJobFields>(
+  {
+    profileId: { type: String, required: true, index: true },
+    tmdbId: { type: Number, required: true },
+    mediaType: { type: String, enum: ["movie", "tv"], required: true },
+    title: { type: String, required: true },
+    posterPath: { type: String, default: null },
+    seasonNumber: { type: Number, default: null },
+    episodeNumber: { type: Number, default: null },
+    episodeTitle: { type: String, default: null },
+    status: {
+      type: String,
+      enum: ["queued", "downloading", "paused", "completed", "failed", "unsupported"],
+      required: true,
+      default: "unsupported",
+    },
+    progressPct: { type: Number, required: true, default: 0 },
+    reason: { type: String, default: null },
+    requestedAt: { type: Date, required: true },
+    updatedAt: { type: Date, required: true },
+  },
+  { versionKey: false }
+);
+downloadJobSchema.index(
+  { profileId: 1, tmdbId: 1, mediaType: 1, seasonNumber: 1, episodeNumber: 1 },
+  { unique: true }
+);
+
+const socialFollowSchema = new Schema<SocialFollowFields>(
+  {
+    followerProfileId: { type: String, required: true, index: true },
+    followeeProfileId: { type: String, required: true, index: true },
+    createdAt: { type: Date, required: true },
+  },
+  { versionKey: false }
+);
+socialFollowSchema.index({ followerProfileId: 1, followeeProfileId: 1 }, { unique: true });
 
 function getModel<T>(name: string, schema: Schema<T>, collection: string): Model<T> {
   return (models[name] as Model<T> | undefined) ?? model<T>(name, schema, collection);
@@ -403,9 +814,33 @@ export const WatchPartyModel = getModel("WatchParty", watchPartySchema, "watchPa
 export const DevicePairingModel = getModel("DevicePairing", devicePairingSchema, "devicePairings");
 export const TvReceiverModel = getModel("TvReceiver", tvReceiverSchema, "tvReceivers");
 export const RatingModel = getModel("Rating", ratingSchema, "ratings");
+export const CollectionModel = getModel("Collection", collectionSchema, "collections");
+export const CollectionItemModel = getModel("CollectionItem", collectionItemSchema, "collectionItems");
+export const RecentSearchModel = getModel("RecentSearch", recentSearchSchema, "recentSearches");
+export const UpcomingReminderModel = getModel("UpcomingReminder", upcomingReminderSchema, "upcomingReminders");
+export const NotificationSubscriptionModel = getModel(
+  "NotificationSubscription",
+  notificationSubscriptionSchema,
+  "notificationSubscriptions"
+);
+export const NotificationEventModel = getModel(
+  "NotificationEvent",
+  notificationEventSchema,
+  "notificationEvents"
+);
+export const PlaybackPreferenceModel = getModel(
+  "PlaybackPreference",
+  playbackPreferenceSchema,
+  "playbackPreferences"
+);
+export const ParentalRuleModel = getModel("ParentalRule", parentalRuleSchema, "parentalRules");
+export const HiddenTitleModel = getModel("HiddenTitle", hiddenTitleSchema, "hiddenTitles");
+export const DeviceSessionModel = getModel("DeviceSession", deviceSessionSchema, "deviceSessions");
+export const DownloadJobModel = getModel("DownloadJob", downloadJobSchema, "downloadJobs");
+export const SocialFollowModel = getModel("SocialFollow", socialFollowSchema, "socialFollows");
 
 export async function connectToDatabase() {
-  globalThis._mongooseConnection ??= mongoose.connect(uri, { dbName });
+  globalThis._mongooseConnection ??= mongoose.connect(getMongoUri(), { dbName });
   return globalThis._mongooseConnection;
 }
 

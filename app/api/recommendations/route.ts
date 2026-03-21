@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
-import { connectToDatabase, GenreAffinityModel, WatchHistoryModel } from "@/lib/db";
+import { connectToDatabase, GenreAffinityModel, HiddenTitleModel, WatchHistoryModel } from "@/lib/db";
 import { requireProfile } from "@/lib/session";
-import type { MaturityLevel } from "@/lib/maturity";
+import { passesMaturityFilter, type MaturityLevel } from "@/lib/maturity";
 import { attachCardContext } from "@/lib/tmdb";
+import { buildRecommendationRows } from "@/lib/recommendations";
 
 const TMDB_BASE = "https://api.themoviedb.org/3";
 
@@ -63,6 +64,19 @@ export async function GET() {
 
   await connectToDatabase();
 
+  const enhancedRows = await buildRecommendationRows(profile.profileId);
+  if (enhancedRows.length > 0) {
+    const enriched = await Promise.all(
+      enhancedRows.map(async (row) => ({
+        title: row.title,
+        items: (await attachCardContext(row.items)).filter((item) =>
+          passesMaturityFilter(item.maturityRating, profile.maturityLevel)
+        ),
+      }))
+    );
+    return NextResponse.json(enriched.filter((row) => row.items.length > 0));
+  }
+
   const topGenres = await GenreAffinityModel.find({ profileId: profile.profileId })
     .sort({ score: -1 })
     .limit(3)
@@ -76,6 +90,8 @@ export async function GET() {
     .select({ tmdbId: 1 })
     .lean();
   const watchedIds = new Set(watched.map((w) => w.tmdbId));
+  const hiddenTitles = await HiddenTitleModel.find({ profileId: profile.profileId }).lean();
+  const hiddenKeys = new Set(hiddenTitles.map((item) => `${item.mediaType}:${item.tmdbId}`));
 
   const rows = await Promise.all(
     topGenres.map(async ({ genreId }) => {
@@ -86,6 +102,7 @@ export async function GET() {
 
       const combined = [...movies, ...shows]
         .filter((item) => !watchedIds.has(item.id))
+        .filter((item) => !hiddenKeys.has(`${item.title ? "movie" : "tv"}:${item.id}`))
         .sort((a, b) => b.vote_average - a.vote_average)
         .slice(0, 20)
         .map((item) => ({
@@ -96,7 +113,7 @@ export async function GET() {
       const items = await attachCardContext(combined);
 
       return {
-        title: `More ${GENRE_NAMES[genreId] ?? "like what you watch"}`,
+        title: GENRE_NAMES[genreId] ?? "For You",
         items,
       };
     })

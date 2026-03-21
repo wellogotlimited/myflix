@@ -690,15 +690,48 @@ export async function getNewThisWeek(): Promise<TMDBItem[]> {
 
 export async function getFilteredContent(
   type: "movie" | "tv",
-  genreId?: string,
-  sortBy: string = "popularity.desc",
-  minRating?: number,
-  pages = 2
+  options: {
+    genreId?: string;
+    sortBy?: string;
+    minRating?: number;
+    pages?: number;
+    year?: string;
+    language?: string;
+    runtime?: string;
+    network?: string;
+    status?: string;
+  } = {}
 ): Promise<TMDBItem[]> {
+  const {
+    genreId,
+    sortBy = "popularity.desc",
+    minRating,
+    pages = 2,
+    year,
+    language,
+    runtime,
+    network,
+    status,
+  } = options;
   const params: Record<string, string> = { sort_by: sortBy };
   if (genreId) params.with_genres = genreId;
   if (minRating) params["vote_average.gte"] = String(minRating);
   if (sortBy === "vote_average.desc") params["vote_count.gte"] = "200";
+  if (year) {
+    if (type === "movie") params.primary_release_year = year;
+    else params.first_air_date_year = year;
+  }
+  if (language) params.with_original_language = language;
+  if (runtime === "short") {
+    params["with_runtime.lte"] = "100";
+  } else if (runtime === "medium") {
+    params["with_runtime.gte"] = "100";
+    params["with_runtime.lte"] = "140";
+  } else if (runtime === "long") {
+    params["with_runtime.gte"] = "140";
+  }
+  if (type === "tv" && network) params.with_networks = network;
+  if (type === "tv" && status) params.with_status = status;
   return tmdbFetchList(`/discover/${type}`, params, pages, type);
 }
 

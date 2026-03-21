@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { after } from "next/server";
 import { appendNetworkDebug } from "@/lib/network-debug-server";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 // ---------------------------------------------------------------------------
 // LRU cache for immutable segments & encryption keys
 // ---------------------------------------------------------------------------
@@ -273,7 +276,7 @@ async function handleProxy(req: NextRequest) {
         note: "streamed-non-playlist",
       });
 
-      return new NextResponse(method === "HEAD" ? null : reconstructed, {
+      return new NextResponse(method === "HEAD" ? null : createPassthroughStream(reconstructed), {
         status: response.status,
         headers: resHeaders,
       });
@@ -335,7 +338,7 @@ async function handleProxy(req: NextRequest) {
       contentType: response.headers.get("content-type"),
     });
 
-    return new NextResponse(method === "HEAD" ? null : response.body, {
+    return new NextResponse(method === "HEAD" ? null : createPassthroughStream(response.body), {
       status: response.status,
       headers: resHeaders,
     });
@@ -426,6 +429,36 @@ function reconstructStream(
         controller.close();
       } else {
         controller.enqueue(value);
+      }
+    },
+  });
+}
+
+function createPassthroughStream(
+  body: ReadableStream<Uint8Array> | null,
+): ReadableStream<Uint8Array> | null {
+  if (!body) return null;
+
+  const reader = body.getReader();
+
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const { done, value } = await reader.read();
+        if (done) {
+          controller.close();
+          return;
+        }
+        controller.enqueue(value);
+      } catch (error) {
+        controller.error(error);
+      }
+    },
+    async cancel(reason) {
+      try {
+        await reader.cancel(reason);
+      } catch {
+        // Ignore upstream cancellation errors.
       }
     },
   });

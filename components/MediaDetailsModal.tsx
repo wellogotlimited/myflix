@@ -5,16 +5,19 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  BookmarkSimple,
   CaretDown,
   CaretLeft,
   CaretRight,
+  Check,
+  CircleNotch,
+  DownloadSimple,
   Play,
   SpeakerSimpleHigh,
   SpeakerSimpleSlash,
   X,
 } from "@phosphor-icons/react";
-import { useMyList } from "@/lib/my-list";
+import RatingButtons from "@/components/RatingButtons";
+import SaveButton from "@/components/SaveButton";
 import {
   formatResumeTime,
   useResumeProgress,
@@ -29,6 +32,13 @@ import {
   type TMDBEpisode,
   type TMDBItem,
 } from "@/lib/tmdb";
+import {
+  isOfflineDownloadSupported,
+  removeOfflineDownload,
+  startOfflineDownload,
+  useOfflineDownloadStatus,
+  type OfflineMediaRequest,
+} from "@/lib/offline-downloads";
 
 function formatRuntime(minutes: number | null | undefined) {
   if (!minutes) return null;
@@ -63,11 +73,11 @@ export default function MediaDetailsModal({
   const [episodesError, setEpisodesError] = useState<string | null>(null);
   const [episodePage, setEpisodePage] = useState(0);
   const [mobileTab, setMobileTab] = useState(0);
+  const [downloadActionBusy, setDownloadActionBusy] = useState(false);
   const episodeCacheRef = useRef<Record<number, TMDBEpisode[]>>({});
 
   const type = getMediaType(activeItem);
   const { data, loading } = useMediaDetails(activeItem, open);
-  const { isSaved, toggle } = useMyList(activeItem);
   const resumeProgress = useResumeProgress(activeItem, open);
 
   useEffect(() => {
@@ -133,6 +143,39 @@ export default function MediaDetailsModal({
       : resumeProgress?.positionSec && resumeProgress.positionSec > 30
         ? `Resume ${formatResumeTime(resumeProgress.positionSec)}`
         : "Play";
+  const secondaryActionClass =
+    "inline-flex items-center gap-1.5 rounded px-2 py-1 text-xs font-medium text-white/68 transition hover:bg-white/10 hover:text-white";
+  const downloadIdentity = useMemo(
+    () =>
+      type === "movie"
+        ? {
+            tmdbId: activeItem.id,
+            mediaType: "movie" as const,
+          }
+        : {
+            tmdbId: activeItem.id,
+            mediaType: "tv" as const,
+            seasonNumber: resumeProgress?.seasonNumber ?? selectedSeasonNumber,
+            episodeNumber: resumeProgress?.episodeNumber ?? 1,
+          },
+    [
+      activeItem.id,
+      resumeProgress?.episodeNumber,
+      resumeProgress?.seasonNumber,
+      selectedSeasonNumber,
+      type,
+    ]
+  );
+  const downloadRecord = useOfflineDownloadStatus(downloadIdentity);
+  const downloadStatusText = useMemo(() => {
+    if (!downloadRecord) return null;
+    if (downloadRecord.status === "completed") return "Available offline on this device";
+    if (downloadRecord.status === "downloading") return `Downloading ${downloadRecord.progressPct}%`;
+    if (downloadRecord.status === "failed" || downloadRecord.status === "unsupported") {
+      return downloadRecord.reason || "Download unavailable";
+    }
+    return null;
+  }, [downloadRecord]);
 
   const totalEpisodePages = Math.max(1, Math.ceil(seasonEpisodes.length / 10));
   const visibleEpisodes = useMemo(
@@ -143,6 +186,90 @@ export default function MediaDetailsModal({
     () => dedupeTMDBItems((data?.similar ?? []).slice(0, 6)),
     [data?.similar]
   );
+
+  async function resolveDownloadRequest(): Promise<OfflineMediaRequest> {
+    const releaseYear =
+      type === "movie"
+        ? activeItem.release_date
+          ? Number(activeItem.release_date.slice(0, 4))
+          : data?.year
+            ? Number(data.year)
+            : null
+        : activeItem.first_air_date
+          ? Number(activeItem.first_air_date.slice(0, 4))
+          : data?.year
+            ? Number(data.year)
+            : null;
+
+    if (type === "movie") {
+      return {
+        tmdbId: activeItem.id,
+        mediaType: "movie",
+        title,
+        posterPath: activeItem.poster_path,
+        backdropPath: activeItem.backdrop_path,
+        releaseYear,
+      };
+    }
+
+    const targetSeasonNumber = resumeProgress?.seasonNumber ?? selectedSeasonNumber;
+    const targetSeason =
+      data?.seasons.find((season) => season.season_number === targetSeasonNumber) ?? null;
+
+    let targetEpisodes =
+      targetSeasonNumber === selectedSeasonNumber ? seasonEpisodes : episodeCacheRef.current[targetSeasonNumber];
+
+    if (!targetEpisodes?.length) {
+      const seasonResponse = await fetch(
+        `/api/tmdb/season?showId=${activeItem.id}&season=${targetSeasonNumber}`
+      );
+      if (!seasonResponse.ok) {
+        throw new Error("Could not load the episode for download.");
+      }
+      const payload = (await seasonResponse.json()) as { episodes: TMDBEpisode[] };
+      targetEpisodes = payload.episodes;
+      episodeCacheRef.current[targetSeasonNumber] = payload.episodes;
+    }
+
+    const targetEpisodeNumber =
+      resumeProgress?.seasonNumber === targetSeasonNumber && resumeProgress?.episodeNumber
+        ? resumeProgress.episodeNumber
+        : targetEpisodes[0]?.episode_number ?? 1;
+    const targetEpisode =
+      targetEpisodes.find((episode) => episode.episode_number === targetEpisodeNumber) ??
+      targetEpisodes[0];
+
+    return {
+      tmdbId: activeItem.id,
+      mediaType: "tv",
+      title,
+      posterPath: activeItem.poster_path,
+      backdropPath: activeItem.backdrop_path,
+      releaseYear,
+      seasonNumber: targetSeasonNumber,
+      seasonTmdbId: targetSeason ? String(targetSeason.id) : null,
+      seasonTitle: targetSeason?.name ?? `Season ${targetSeasonNumber}`,
+      episodeNumber: targetEpisode?.episode_number ?? targetEpisodeNumber,
+      episodeTmdbId: targetEpisode ? String(targetEpisode.id) : null,
+      episodeTitle: targetEpisode?.name ?? null,
+    };
+  }
+
+  async function toggleDownload() {
+    if (downloadActionBusy || downloadRecord?.status === "downloading") return;
+
+    setDownloadActionBusy(true);
+    try {
+      const request = await resolveDownloadRequest();
+      if (downloadRecord?.status === "completed") {
+        await removeOfflineDownload(request);
+      } else {
+        await startOfflineDownload(request);
+      }
+    } finally {
+      setDownloadActionBusy(false);
+    }
+  }
 
   useEffect(() => {
     if (type !== "tv" || !data) {
@@ -290,6 +417,41 @@ export default function MediaDetailsModal({
             <Play size={17} weight="fill" />
             {primaryActionLabel}
           </Link>
+
+          <div className="mt-3 flex items-center gap-2">
+            <SaveButton item={activeItem} size="sm" />
+            <RatingButtons item={activeItem} size="sm" />
+            <button
+              type="button"
+              onClick={toggleDownload}
+              disabled={downloadActionBusy || downloadRecord?.status === "downloading"}
+              className={`inline-flex h-10 w-10 items-center justify-center rounded-full transition ${
+                downloadRecord?.status === "completed"
+                  ? "bg-white text-black"
+                  : "bg-white/10 text-white hover:bg-white/16"
+              }`}
+              title={
+                downloadRecord?.status === "completed"
+                  ? "Remove download"
+                  : !isOfflineDownloadSupported()
+                    ? "Download unavailable"
+                    : downloadRecord?.status === "downloading"
+                      ? `Downloading ${downloadRecord.progressPct}%`
+                      : "Download"
+              }
+            >
+              {downloadActionBusy || downloadRecord?.status === "downloading" ? (
+                <CircleNotch size={16} weight="bold" className="animate-spin" />
+              ) : downloadRecord?.status === "completed" ? (
+                <Check size={16} weight="bold" />
+              ) : (
+                <DownloadSimple size={16} weight="regular" />
+              )}
+            </button>
+          </div>
+          {downloadStatusText && (
+            <p className="mt-2 text-xs text-white/45">{downloadStatusText}</p>
+          )}
 
           {/* Description */}
           <p className="mt-4 text-sm leading-6 text-white/68">
@@ -546,7 +708,7 @@ export default function MediaDetailsModal({
                   </h2>
                 )}
 
-                <div className="mt-4 flex flex-wrap items-center gap-3">
+                <div className="mt-4 flex flex-wrap items-center gap-2.5">
                   <Link
                     href={playHref}
                     onClick={onClose}
@@ -555,18 +717,8 @@ export default function MediaDetailsModal({
                     <Play size={18} weight="fill" />
                     {primaryActionLabel}
                   </Link>
-                  <button
-                    type="button"
-                    onClick={toggle}
-                    className={`inline-flex h-12 w-12 items-center justify-center rounded-full ring-1 backdrop-blur-sm transition ${
-                      isSaved
-                        ? "bg-white text-black ring-white"
-                        : "bg-black/45 text-white ring-white/18 hover:bg-black/60"
-                    }`}
-                    title={isSaved ? "Remove from My List" : "Add to My List"}
-                  >
-                    <BookmarkSimple size={20} weight={isSaved ? "fill" : "regular"} />
-                  </button>
+                  <SaveButton item={activeItem} />
+                  <RatingButtons item={activeItem} size="md" />
                 </div>
               </div>
             </div>

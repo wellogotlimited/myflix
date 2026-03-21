@@ -3,9 +3,10 @@
 import { useRef, useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { ArrowLeft, MagnifyingGlass } from "@phosphor-icons/react";
+import { ArrowLeft, FunnelSimple, MagnifyingGlass } from "@phosphor-icons/react";
 import MediaDetailsModal from "@/components/MediaDetailsModal";
 import MediaCard from "@/components/MediaCard";
+import NotificationBell from "@/components/NotificationBell";
 import { TMDBItem, backdropUrl, getTitle, getMediaType } from "@/lib/tmdb";
 
 const SEARCH_GENRES = [
@@ -77,6 +78,16 @@ export default function MobileSearchPage({
   const [typeFilter, setTypeFilter] = useState<"all" | "movie" | "tv">("all");
   const [genreFilter, setGenreFilter] = useState<number | null>(null);
   const [minRating, setMinRating] = useState(0);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [suggestions, setSuggestions] = useState<{
+    recent: string[];
+    trending: string[];
+    collections: Array<{ id: number; name?: string }>;
+  }>({
+    recent: [],
+    trending: [],
+    collections: [],
+  });
 
   const availableGenreIds = useMemo(() => {
     const ids = new Set<number>();
@@ -108,6 +119,31 @@ export default function MobileSearchPage({
     return () => { clearTimeout(t); cancelAnimationFrame(raf); };
   }, []);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(`/api/search/suggestions?q=${encodeURIComponent(value.trim())}`, { signal: controller.signal })
+      .then((response) => response.json())
+      .then((data) => {
+        setSuggestions({
+          recent: Array.isArray(data?.recent) ? data.recent : [],
+          trending: Array.isArray(data?.trending) ? data.trending : [],
+          collections: Array.isArray(data?.collections) ? data.collections : [],
+        });
+      })
+      .catch(() => {});
+
+    return () => controller.abort();
+  }, [value]);
+
+  useEffect(() => {
+    if (!query.trim()) return;
+    fetch("/api/search/recent", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query }),
+    }).catch(() => {});
+  }, [query]);
+
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const v = e.target.value;
     setValue(v);
@@ -128,7 +164,7 @@ export default function MobileSearchPage({
         <button onClick={() => router.back()} className="flex-shrink-0 text-white">
           <ArrowLeft size={22} weight="bold" />
         </button>
-        <div className="flex flex-1 items-center gap-2 rounded-full bg-white/10 px-4 py-2.5">
+        <div className="flex min-w-0 flex-1 items-center gap-2 rounded-full bg-white/10 px-4 py-2.5">
           <MagnifyingGlass size={16} className="flex-shrink-0 text-white/50" />
           <input
             ref={inputRef}
@@ -140,10 +176,22 @@ export default function MobileSearchPage({
             className="flex-1 bg-transparent text-sm text-white placeholder-white/40 outline-none"
           />
         </div>
+        <div className="flex-shrink-0">
+          <NotificationBell size={20} />
+        </div>
+        <button
+          type="button"
+          onClick={() => setFiltersOpen((current) => !current)}
+          className={`flex-shrink-0 rounded-full p-2 transition ${
+            filtersOpen ? "bg-white text-black" : "bg-white/10 text-white"
+          }`}
+        >
+          <FunnelSimple size={17} weight="bold" />
+        </button>
       </div>
 
       {/* Filters (only when there are results) */}
-      {query && results.length > 0 && (
+      {query && results.length > 0 && filtersOpen && (
         <div className="space-y-2 px-4 pb-2 pt-1">
           {/* Type */}
           <div className="flex gap-2">
@@ -178,6 +226,45 @@ export default function MobileSearchPage({
         </div>
       )}
 
+      {!query && (suggestions.recent.length > 0 || suggestions.trending.length > 0) && (
+        <div className="space-y-5 px-4 pb-2">
+          {suggestions.recent.length > 0 && (
+            <div>
+              <p className="mb-2 text-xs uppercase tracking-wider text-white/40">Recent</p>
+              <div className="flex flex-wrap gap-2">
+                {suggestions.recent.map((item) => (
+                  <button
+                    key={item}
+                    type="button"
+                    onClick={() => router.replace(`/search?q=${encodeURIComponent(item)}`)}
+                    className="rounded-full bg-white/10 px-3 py-1.5 text-xs text-white"
+                  >
+                    {item}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {suggestions.trending.length > 0 && (
+            <div>
+              <p className="mb-2 text-xs uppercase tracking-wider text-white/40">Trending</p>
+              <div className="flex flex-wrap gap-2">
+                {suggestions.trending.map((item) => (
+                  <button
+                    key={item}
+                    type="button"
+                    onClick={() => router.replace(`/search?q=${encodeURIComponent(item)}`)}
+                    className="rounded-full bg-white/10 px-3 py-1.5 text-xs text-white"
+                  >
+                    {item}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Results grid */}
       {query && filteredResults.length > 0 && (
         <div className="px-4 pt-2">
@@ -197,6 +284,27 @@ export default function MobileSearchPage({
       )}
       {query && results.length > 0 && filteredResults.length === 0 && (
         <p className="px-4 pt-4 text-sm text-white/40">No results match your filters.</p>
+      )}
+      {query && suggestions.collections.length > 0 && (
+        <div className="space-y-4 px-4 pt-5">
+          {suggestions.collections.length > 0 && (
+            <div>
+              <p className="mb-2 text-xs uppercase tracking-wider text-white/40">Collections</p>
+              <div className="flex flex-wrap gap-2">
+                {suggestions.collections.map((collection) => (
+                  <button
+                    key={collection.id}
+                    type="button"
+                    onClick={() => router.replace(`/search?q=${encodeURIComponent(collection.name ?? "")}`)}
+                    className="rounded-full bg-white/10 px-3 py-1.5 text-xs text-white"
+                  >
+                    {collection.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
       {/* Recommended list when no query */}

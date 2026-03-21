@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { connectToDatabase, WatchProgressModel } from "@/lib/db";
+import { connectToDatabase, HiddenTitleModel, WatchProgressModel } from "@/lib/db";
 import { requireProfile } from "@/lib/session";
 import { attachCardContext, getTitleSimilar } from "@/lib/tmdb";
 import { passesMaturityFilter } from "@/lib/maturity";
@@ -9,6 +9,8 @@ export async function GET() {
   if (!profile) return NextResponse.json([]);
 
   await connectToDatabase();
+  const hiddenTitles = await HiddenTitleModel.find({ profileId: profile.profileId }).lean();
+  const hiddenKeys = new Set(hiddenTitles.map((item) => `${item.mediaType}:${item.tmdbId}`));
 
   const recentProgress = await WatchProgressModel.find({
     profileId: profile.profileId,
@@ -43,7 +45,8 @@ export async function GET() {
         similar.filter((item) => item.backdrop_path)
       );
       const items = withContext.filter((item) =>
-        passesMaturityFilter(item.maturityRating, profile.maturityLevel)
+        passesMaturityFilter(item.maturityRating, profile.maturityLevel) &&
+        !hiddenKeys.has(`${item.media_type ?? (item.title ? "movie" : "tv")}:${item.id}`)
       );
       return {
         title: `Because you watched ${title}`,

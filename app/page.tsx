@@ -28,6 +28,7 @@ import Top10Row from "@/components/Top10Row";
 import BecauseYouWatchedRow from "@/components/BecauseYouWatchedRow";
 import { requireProfile } from "@/lib/session";
 import { passesMaturityFilter } from "@/lib/maturity";
+import { applyProfileDiscoveryRules, getHiddenTitles, getParentalRule } from "@/lib/profile-controls";
 
 const GENRE_NAMES: Record<string, string> = {
   "28": "Action",
@@ -69,6 +70,10 @@ export default async function Home({
   ]);
 
   const maturityLevel = profile?.maturityLevel ?? "ADULT";
+  const [hiddenTitles, parentalRule] = await Promise.all([
+    getHiddenTitles(profile.profileId),
+    getParentalRule(profile.profileId),
+  ]);
 
   const [
     trendingAll,
@@ -89,7 +94,11 @@ export default async function Home({
   ]);
 
   const applyMaturity = (items: typeof trendingAll) =>
-    items.filter((item) => passesMaturityFilter(item.maturityRating, maturityLevel));
+    applyProfileDiscoveryRules(
+      items.filter((item) => passesMaturityFilter(item.maturityRating, maturityLevel)),
+      hiddenTitles,
+      parentalRule
+    );
 
   const trending = applyMaturity(trendingAll);
   const popularMovies = applyMaturity(popularMoviesAll);

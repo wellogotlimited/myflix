@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import { MagnifyingGlass, List, CaretDown, X, Gear, UserList, UserCircle, SignOut } from "@phosphor-icons/react";
 import AppSettingsContent from "@/components/AppSettingsContent";
 import MyListContent from "@/components/MyListContent";
+import NotificationBell from "@/components/NotificationBell";
 import ProfileAvatar from "@/components/profile/ProfileAvatar";
 import MediaCard from "@/components/MediaCard";
 import { useMyList } from "@/lib/my-list";
@@ -19,6 +20,7 @@ export default function MyNetflixPage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [myListOpen, setMyListOpen] = useState(false);
+  const [follows, setFollows] = useState<Array<{ _id: string; name: string; overlap: number }>>([]);
   const { profile, profiles } = useCurrentProfile();
   const { items } = useMyList();
 
@@ -36,6 +38,36 @@ export default function MyNetflixPage() {
 
   const otherProfiles = profiles.filter((p) => p._id !== session?.user?.profileId);
 
+  useEffect(() => {
+    void fetch("/api/social/follows")
+      .then((res) => res.json())
+      .then((followData) => {
+        if (Array.isArray(followData)) setFollows(followData);
+      })
+      .catch(() => {});
+  }, []);
+
+  async function toggleFollow(profileId: string) {
+    const alreadyFollowing = follows.some((item) => item._id === profileId);
+    await fetch("/api/social/follows", {
+      method: alreadyFollowing ? "DELETE" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ followeeProfileId: profileId }),
+    }).catch(() => {});
+    setFollows((current) =>
+      alreadyFollowing
+        ? current.filter((item) => item._id !== profileId)
+        : [
+            ...current,
+            {
+              _id: profileId,
+              name: otherProfiles.find((item) => item._id === profileId)?.name ?? "Profile",
+              overlap: 0,
+            },
+          ]
+    );
+  }
+
   return (
     <main className="min-h-screen pb-28">
       <div
@@ -50,6 +82,7 @@ export default function MyNetflixPage() {
           <Link href="/search" className="text-white">
             <MagnifyingGlass size={22} />
           </Link>
+          <NotificationBell size={20} />
           <button onClick={() => setMenuOpen(true)} className="text-white">
             <List size={22} />
           </button>
@@ -100,6 +133,38 @@ export default function MyNetflixPage() {
                 portrait
               />
             ))}
+          </div>
+        </section>
+      )}
+
+      {otherProfiles.length > 0 && (
+        <section className="mt-8 px-4">
+          <div className="rounded-[24px] border border-white/10 bg-white/[0.03] p-4">
+            <h2 className="text-lg font-semibold text-white">Taste Overlap</h2>
+            <div className="mt-4 space-y-3">
+              {otherProfiles.map((otherProfile) => {
+                const existing = follows.find((item) => item._id === otherProfile._id);
+                return (
+                  <div key={otherProfile._id} className="flex items-center justify-between gap-3 rounded-2xl bg-white/[0.04] px-4 py-3">
+                    <div>
+                      <p className="text-sm font-medium text-white">{otherProfile.name}</p>
+                      <p className="mt-1 text-xs text-white/45">
+                        {existing ? `${Math.round(existing.overlap * 100)}% taste overlap` : "Not followed yet"}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => toggleFollow(otherProfile._id)}
+                      className={`rounded-full px-3 py-2 text-xs font-medium transition ${
+                        existing ? "bg-white text-black" : "bg-white/10 text-white"
+                      }`}
+                    >
+                      {existing ? "Following" : "Follow"}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </section>
       )}
