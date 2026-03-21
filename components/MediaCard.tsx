@@ -146,10 +146,8 @@ export default function MediaCard({
               className="object-cover"
             />
             {showNewBadge && (
-              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent pb-1.5 pt-4 text-center">
-                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[#e50914]">
-                  New
-                </span>
+              <div className="absolute bottom-0 left-2 rounded-t-md bg-[#e50914] px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.18em] text-white shadow-md">
+                New
               </div>
             )}
           </div>
@@ -198,6 +196,11 @@ export default function MediaCard({
               sizes={isGrid ? "(max-width: 640px) 100vw, (max-width: 768px) 50vw, (max-width: 1024px) 33vw, (max-width: 1280px) 25vw, 20vw" : "280px"}
               className="object-cover transition-transform duration-300 group-hover:scale-105"
             />
+            {isNewRelease(item) && (
+              <div className="absolute bottom-0 left-2 rounded-t-md bg-[#e50914] px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.18em] text-white shadow-md">
+                New
+              </div>
+            )}
           </div>
         </button>
       </div>
