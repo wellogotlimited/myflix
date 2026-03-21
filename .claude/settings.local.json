@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls -la /c/Users/user/Desktop/myflix/myflix/components/*.tsx)",
+      "Bash(ls -1 /c/Users/user/Desktop/myflix/myflix/components/*.tsx)",
+      "Bash(xargs wc:*)",
+      "Bash(npx tsc:*)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(where npm:*)",
+      "Bash(where node:*)"
+    ]
+  }
+}
