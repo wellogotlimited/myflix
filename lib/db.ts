@@ -163,6 +163,15 @@ export interface TvReceiverDoc {
   statusUpdatedAt?: Date | null;
 }
 
+export interface RatingDoc {
+  _id: string;
+  profileId: string;
+  tmdbId: number;
+  mediaType: "movie" | "tv";
+  rating: "up" | "down";
+  ratedAt: Date;
+}
+
 type AccountFields = Omit<AccountDoc, "_id">;
 type ProfileFields = Omit<ProfileDoc, "_id">;
 type BookmarkFields = Omit<BookmarkDoc, "_id">;
@@ -172,6 +181,7 @@ type GenreAffinityFields = Omit<GenreAffinityDoc, "_id">;
 type WatchPartyFields = Omit<WatchPartyDoc, "_id">;
 type DevicePairingFields = Omit<DevicePairingDoc, "_id">;
 type TvReceiverFields = Omit<TvReceiverDoc, "_id">;
+type RatingFields = Omit<RatingDoc, "_id">;
 
 const accountSchema = new Schema<AccountFields>(
   {
@@ -367,6 +377,18 @@ const tvReceiverSchema = new Schema<TvReceiverFields>(
   { versionKey: false }
 );
 
+const ratingSchema = new Schema<RatingFields>(
+  {
+    profileId: { type: String, required: true, index: true },
+    tmdbId: { type: Number, required: true },
+    mediaType: { type: String, enum: ["movie", "tv"], required: true },
+    rating: { type: String, enum: ["up", "down"], required: true },
+    ratedAt: { type: Date, required: true },
+  },
+  { versionKey: false }
+);
+ratingSchema.index({ profileId: 1, tmdbId: 1, mediaType: 1 }, { unique: true });
+
 function getModel<T>(name: string, schema: Schema<T>, collection: string): Model<T> {
   return (models[name] as Model<T> | undefined) ?? model<T>(name, schema, collection);
 }
@@ -380,6 +402,7 @@ export const GenreAffinityModel = getModel("GenreAffinity", genreAffinitySchema,
 export const WatchPartyModel = getModel("WatchParty", watchPartySchema, "watchParties");
 export const DevicePairingModel = getModel("DevicePairing", devicePairingSchema, "devicePairings");
 export const TvReceiverModel = getModel("TvReceiver", tvReceiverSchema, "tvReceivers");
+export const RatingModel = getModel("Rating", ratingSchema, "ratings");
 
 export async function connectToDatabase() {
   globalThis._mongooseConnection ??= mongoose.connect(uri, { dbName });

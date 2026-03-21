@@ -6,10 +6,18 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { BookmarkSimple, CaretRight, Play } from "@phosphor-icons/react";
 import MediaDetailsModal from "./MediaDetailsModal";
+import RatingButtons from "./RatingButtons";
 import { useMyList } from "@/lib/my-list";
 import { useResumeProgress } from "@/lib/use-resume-progress";
 import { useMediaDetails } from "@/lib/use-media-details";
 import { TMDBItem, backdropUrl, posterUrl, getMediaType } from "@/lib/tmdb";
+
+function isNewRelease(item: TMDBItem): boolean {
+  const dateStr = item.release_date || item.first_air_date;
+  if (!dateStr) return false;
+  const daysAgo = (Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24);
+  return daysAgo <= 45;
+}
 
 type MediaCardLayout = "rail" | "grid";
 
@@ -118,6 +126,7 @@ export default function MediaCard({
     const portraitSizes = isGrid
       ? "(max-width: 379px) 44vw, (max-width: 767px) 29vw, 220px"
       : "112px";
+    const showNewBadge = isNewRelease(item);
 
     return (
       <>
@@ -136,6 +145,11 @@ export default function MediaCard({
               sizes={portraitSizes}
               className="object-cover"
             />
+            {showNewBadge && (
+              <div className="absolute left-1.5 top-1.5 rounded bg-red-600 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white shadow-md">
+                New
+              </div>
+            )}
           </div>
         </button>
         {modalOpen ? (
@@ -248,6 +262,7 @@ export default function MediaCard({
                       weight={isSaved ? "fill" : "regular"}
                     />
                   </button>
+                  <RatingButtons item={item} />
                 </div>
 
                 <button

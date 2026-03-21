@@ -661,6 +661,51 @@ export async function getMoodItems(mood: Mood): Promise<{ label: string; items: 
   return { label: config.label, items: combined };
 }
 
+export async function getTop10Trending(): Promise<TMDBItem[]> {
+  const items = await getTrending(1);
+  return items.slice(0, 10);
+}
+
+export async function getNewThisWeek(): Promise<TMDBItem[]> {
+  const [movies, shows] = await Promise.all([
+    tmdbFetchList("/movie/now_playing", {}, 1, "movie"),
+    tmdbFetchList("/tv/on_the_air", {}, 1, "tv"),
+  ]);
+
+  const seen = new Set<string>();
+  const combined: TMDBItem[] = [];
+  const maxLen = Math.max(movies.length, shows.length);
+  for (let i = 0; i < maxLen && combined.length < 20; i++) {
+    if (i < movies.length) {
+      const k = `movie-${movies[i].id}`;
+      if (!seen.has(k)) { seen.add(k); combined.push(movies[i]); }
+    }
+    if (i < shows.length && combined.length < 20) {
+      const k = `tv-${shows[i].id}`;
+      if (!seen.has(k)) { seen.add(k); combined.push(shows[i]); }
+    }
+  }
+  return combined;
+}
+
+export async function getFilteredContent(
+  type: "movie" | "tv",
+  genreId?: string,
+  sortBy: string = "popularity.desc",
+  minRating?: number,
+  pages = 2
+): Promise<TMDBItem[]> {
+  const params: Record<string, string> = { sort_by: sortBy };
+  if (genreId) params.with_genres = genreId;
+  if (minRating) params["vote_average.gte"] = String(minRating);
+  if (sortBy === "vote_average.desc") params["vote_count.gte"] = "200";
+  return tmdbFetchList(`/discover/${type}`, params, pages, type);
+}
+
+export async function getTitleSimilar(id: number, type: "movie" | "tv"): Promise<TMDBItem[]> {
+  return tmdbFetchList(`/${type}/${id}/similar`, {}, 1, type);
+}
+
 export async function attachCardContext(items: TMDBItem[]): Promise<TMDBItem[]> {
   const results = await Promise.all(
     items.map(async (item) => {

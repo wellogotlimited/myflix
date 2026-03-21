@@ -17,11 +17,15 @@ import {
   getTopRatedShows,
   getGenreItems,
   getHeroExtras,
+  getTop10Trending,
+  getNewThisWeek,
   attachCardContext,
   getMediaType,
   posterUrl,
 } from "@/lib/tmdb";
 import MoodRows from "@/components/MoodRows";
+import Top10Row from "@/components/Top10Row";
+import BecauseYouWatchedRow from "@/components/BecauseYouWatchedRow";
 import { requireProfile } from "@/lib/session";
 import { passesMaturityFilter } from "@/lib/maturity";
 
@@ -51,6 +55,8 @@ export default async function Home({
     popularShowsRaw,
     topMoviesRaw,
     topShowsRaw,
+    top10Raw,
+    newThisWeekRaw,
   ] = await Promise.all([
     requireProfile(),
     getTrending(),
@@ -58,6 +64,8 @@ export default async function Home({
     getPopularShows(),
     getTopRatedMovies(),
     getTopRatedShows(),
+    getTop10Trending(),
+    getNewThisWeek(),
   ]);
 
   const maturityLevel = profile?.maturityLevel ?? "ADULT";
@@ -68,12 +76,16 @@ export default async function Home({
     popularShowsAll,
     topMoviesAll,
     topShowsAll,
+    top10All,
+    newThisWeekAll,
   ] = await Promise.all([
     attachCardContext(trendingRaw),
     attachCardContext(popularMoviesRaw),
     attachCardContext(popularShowsRaw),
     attachCardContext(topMoviesRaw),
     attachCardContext(topShowsRaw),
+    attachCardContext(top10Raw),
+    attachCardContext(newThisWeekRaw),
   ]);
 
   const applyMaturity = (items: typeof trendingAll) =>
@@ -84,6 +96,8 @@ export default async function Home({
   const popularShows = applyMaturity(popularShowsAll);
   const topMovies = applyMaturity(topMoviesAll);
   const topShows = applyMaturity(topShowsAll);
+  const top10 = applyMaturity(top10All);
+  const newThisWeek = applyMaturity(newThisWeekAll);
 
   const hero = trending[0];
   const heroExtras = hero ? await getHeroExtras(hero.id, getMediaType(hero)) : null;
@@ -146,8 +160,13 @@ export default async function Home({
           <ContinueWatchingRow />
         </Suspense>
         <Suspense fallback={null}>
+          <BecauseYouWatchedRow />
+        </Suspense>
+        <Suspense fallback={null}>
           <RecommendedRow />
         </Suspense>
+        <Top10Row items={top10} />
+        <MediaRow title="New This Week" items={newThisWeek} />
         <MediaRow title="Trending Now" items={trending} />
         <MediaRow title="Popular Movies" items={popularMovies} />
         <MediaRow title="Popular TV Shows" items={popularShows} />
@@ -184,6 +203,8 @@ export default async function Home({
         )}
         {!urlFilter && (
           <>
+            <Top10Row items={top10} />
+            <MediaRow title="New This Week" items={newThisWeek} portrait />
             <MediaRow title="Trending Now" items={trending} portrait />
             <MediaRow title="Popular Movies" items={popularMovies} portrait />
             <MediaRow title="Popular Shows" items={popularShows} portrait />

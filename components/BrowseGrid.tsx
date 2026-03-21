@@ -1,3 +1,4 @@
+import { type ReactNode } from "react";
 import { dedupeTMDBItems, type TMDBItem } from "@/lib/tmdb";
 import MediaCard from "./MediaCard";
 
@@ -5,10 +6,12 @@ export default function BrowseGrid({
   title,
   items,
   mobilePortrait = false,
+  filterBar,
 }: {
   title: string;
   items: TMDBItem[];
   mobilePortrait?: boolean;
+  filterBar?: ReactNode;
 }) {
   const uniqueItems = dedupeTMDBItems(items);
   const rootClassName = mobilePortrait
@@ -17,7 +20,7 @@ export default function BrowseGrid({
 
   return (
     <main className={rootClassName}>
-      <div className="mb-8">
+      <div className="mb-6">
         <p className="text-xs font-semibold uppercase tracking-[0.28em] text-white/42">
           Browse
         </p>
@@ -25,6 +28,8 @@ export default function BrowseGrid({
           {title}
         </h1>
       </div>
+
+      {filterBar && <div className="mb-6">{filterBar}</div>}
 
       <div
         className={`grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 ${
