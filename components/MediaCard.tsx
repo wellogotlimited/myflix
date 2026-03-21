@@ -146,7 +146,7 @@ export default function MediaCard({
               className="object-cover"
             />
             {showNewBadge && (
-              <div className="absolute bottom-0 left-1/2 -translate-x-1/2 rounded-t-md bg-[#e50914] px-2.5 py-1 text-[11px] font-bold text-white shadow-md whitespace-nowrap">
+              <div className="absolute bottom-0 left-1/2 -translate-x-1/2 rounded-t-md bg-[#e50914] px-2 py-0.5 text-[9px] sm:px-2.5 sm:py-1 sm:text-[11px] font-bold text-white shadow-md whitespace-nowrap">
                 Recently Added
               </div>
             )}
@@ -197,7 +197,7 @@ export default function MediaCard({
               className="object-cover transition-transform duration-300 group-hover:scale-105"
             />
             {isNewRelease(item) && (
-              <div className="absolute bottom-0 left-1/2 -translate-x-1/2 rounded-t-md bg-[#e50914] px-2.5 py-1 text-[11px] font-bold text-white shadow-md whitespace-nowrap">
+              <div className="absolute bottom-0 left-1/2 -translate-x-1/2 rounded-t-md bg-[#e50914] px-2 py-0.5 text-[9px] sm:px-2.5 sm:py-1 sm:text-[11px] font-bold text-white shadow-md whitespace-nowrap">
                 Recently Added
               </div>
             )}
