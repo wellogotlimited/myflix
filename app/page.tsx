@@ -10,10 +10,11 @@ import MobileHeader from "@/components/mobile/MobileHeader";
 import MobileHero from "@/components/mobile/MobileHero";
 import FilterPills from "@/components/mobile/FilterPills";
 import {
-  filterMovieItems,
   getTrending,
   getPopularMovies,
+  getPopularShows,
   getTopRatedMovies,
+  getTopRatedShows,
   getGenreItems,
   getHeroExtras,
   attachCardContext,
@@ -21,6 +22,7 @@ import {
   posterUrl,
 } from "@/lib/tmdb";
 import MoodRows from "@/components/MoodRows";
+import TvHomeGate from "@/components/tv/TvHomeGate";
 import { requireProfile } from "@/lib/session";
 import { passesMaturityFilter } from "@/lib/maturity";
 
@@ -42,22 +44,37 @@ export default async function Home({
   searchParams: Promise<{ filter?: string; genreId?: string }>;
 }) {
   const { filter: urlFilter, genreId } = await searchParams;
-  const activeFilter =
-    urlFilter === "movies" || urlFilter === "genre" ? urlFilter : undefined;
 
-  const [profile, trendingRaw, popularMoviesRaw, topMoviesRaw] = await Promise.all([
+  const [
+    profile,
+    trendingRaw,
+    popularMoviesRaw,
+    popularShowsRaw,
+    topMoviesRaw,
+    topShowsRaw,
+  ] = await Promise.all([
     requireProfile(),
     getTrending(),
     getPopularMovies(),
+    getPopularShows(),
     getTopRatedMovies(),
+    getTopRatedShows(),
   ]);
 
   const maturityLevel = profile?.maturityLevel ?? "ADULT";
 
-  const [trendingAll, popularMoviesAll, topMoviesAll] = await Promise.all([
-    attachCardContext(filterMovieItems(trendingRaw)),
+  const [
+    trendingAll,
+    popularMoviesAll,
+    popularShowsAll,
+    topMoviesAll,
+    topShowsAll,
+  ] = await Promise.all([
+    attachCardContext(trendingRaw),
     attachCardContext(popularMoviesRaw),
+    attachCardContext(popularShowsRaw),
     attachCardContext(topMoviesRaw),
+    attachCardContext(topShowsRaw),
   ]);
 
   const applyMaturity = (items: typeof trendingAll) =>
@@ -65,7 +82,9 @@ export default async function Home({
 
   const trending = applyMaturity(trendingAll);
   const popularMovies = applyMaturity(popularMoviesAll);
+  const popularShows = applyMaturity(popularShowsAll);
   const topMovies = applyMaturity(topMoviesAll);
+  const topShows = applyMaturity(topShowsAll);
 
   const hero = trending[0];
   const heroExtras = hero ? await getHeroExtras(hero.id, getMediaType(hero)) : null;
@@ -73,14 +92,15 @@ export default async function Home({
 
   // Fetch genre items if filter=genre
   let genreItems: typeof trending = [];
-  if (activeFilter === "genre" && genreId) {
+  if (urlFilter === "genre" && genreId) {
     const genreRaw = await getGenreItems(genreId);
     const genreAll = await attachCardContext(genreRaw);
     genreItems = applyMaturity(genreAll);
   }
 
   return (
-    <main className="min-h-screen">
+    <TvHomeGate>
+      <main className="min-h-screen">
       {/* Desktop hero */}
       {hero && (
         <div className="hidden md:block">
@@ -117,7 +137,7 @@ export default async function Home({
 
         <div className="relative">
           <MobileHeader />
-          <FilterPills currentFilter={activeFilter} />
+          <FilterPills currentFilter={urlFilter} />
           {hero && <MobileHero item={hero} logoPath={heroExtras?.logoPath} />}
         </div>
       </section>
@@ -132,7 +152,9 @@ export default async function Home({
         </Suspense>
         <MediaRow title="Trending Now" items={trending} />
         <MediaRow title="Popular Movies" items={popularMovies} />
+        <MediaRow title="Popular TV Shows" items={popularShows} />
         <MediaRow title="Top Rated Movies" items={topMovies} />
+        <MediaRow title="Top Rated TV Shows" items={topShows} />
         <Suspense fallback={null}>
           <MoodRows maturityLevel={maturityLevel} />
         </Suspense>
@@ -143,30 +165,39 @@ export default async function Home({
         <Suspense fallback={null}>
           <ContinueWatchingRow />
         </Suspense>
-        {activeFilter === "movies" && (
+        {urlFilter === "shows" && (
+          <>
+            <MediaRow title="Popular Shows" items={popularShows} portrait />
+            <MediaRow title="Top Rated Shows" items={topShows} portrait />
+          </>
+        )}
+        {urlFilter === "movies" && (
           <>
             <MediaRow title="Popular Movies" items={popularMovies} portrait />
             <MediaRow title="Top Rated Movies" items={topMovies} portrait />
           </>
         )}
-        {activeFilter === "genre" && genreId && (
+        {urlFilter === "genre" && genreId && (
           <MediaRow
             title={GENRE_NAMES[genreId] ?? "Genre"}
             items={genreItems}
             portrait
           />
         )}
-        {!activeFilter && (
+        {!urlFilter && (
           <>
             <MediaRow title="Trending Now" items={trending} portrait />
             <MediaRow title="Popular Movies" items={popularMovies} portrait />
+            <MediaRow title="Popular Shows" items={popularShows} portrait />
             <MediaRow title="Top Rated Movies" items={topMovies} portrait />
+            <MediaRow title="Top Rated Shows" items={topShows} portrait />
             <Suspense fallback={null}>
               <MoodRows maturityLevel={maturityLevel} portrait />
             </Suspense>
           </>
         )}
       </div>
-    </main>
+      </main>
+    </TvHomeGate>
   );
 }

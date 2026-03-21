@@ -7,11 +7,7 @@ export async function GET() {
   if (!profile) return NextResponse.json({ error: "No active profile" }, { status: 401 });
 
   await connectToDatabase();
-  const items = await WatchProgressModel.find({
-    profileId: profile.profileId,
-    completed: false,
-    mediaType: "movie",
-  })
+  const items = await WatchProgressModel.find({ profileId: profile.profileId, completed: false })
     .sort({ updatedAt: -1 })
     .limit(20)
     .lean();

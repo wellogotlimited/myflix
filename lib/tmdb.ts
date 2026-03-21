@@ -165,10 +165,6 @@ export function getMediaType(item: TMDBItem): "movie" | "tv" {
   return item.title ? "movie" : "tv";
 }
 
-export function filterMovieItems(items: TMDBItem[]): TMDBItem[] {
-  return items.filter((item) => getMediaType(item) === "movie");
-}
-
 export function dedupeTMDBItems(items: TMDBItem[]): TMDBItem[] {
   const seen = new Set<string>();
   return items.filter((item) => {
@@ -608,36 +604,61 @@ type Mood = "feel-good" | "intense-thrillers" | "action-packed" | "mind-bending"
 interface MoodConfig {
   label: string;
   movieParams: Record<string, string>;
+  tvParams: Record<string, string>;
 }
 
 const MOOD_CONFIGS: Record<Mood, MoodConfig> = {
   "feel-good": {
     label: "Feel-Good Picks",
     movieParams: { with_genres: "35,10751", "vote_average.gte": "7", sort_by: "popularity.desc" },
+    tvParams: { with_genres: "35,10751", "vote_average.gte": "7", sort_by: "popularity.desc" },
   },
   "intense-thrillers": {
     label: "Intense Thrillers",
     movieParams: { with_genres: "53,80", "vote_average.gte": "7", sort_by: "popularity.desc" },
+    tvParams: { with_genres: "53,80", "vote_average.gte": "7", sort_by: "popularity.desc" },
   },
   "action-packed": {
     label: "Action-Packed",
     movieParams: { with_genres: "28,12", sort_by: "popularity.desc" },
+    tvParams: { with_genres: "10759", sort_by: "popularity.desc" },
   },
   "mind-bending": {
     label: "Mind-Bending",
     movieParams: { with_genres: "878,9648", sort_by: "popularity.desc" },
+    tvParams: { with_genres: "10765,9648", sort_by: "popularity.desc" },
   },
   "critically-acclaimed": {
     label: "Critically Acclaimed",
     movieParams: { sort_by: "vote_average.desc", "vote_count.gte": "1000" },
+    tvParams: { sort_by: "vote_average.desc", "vote_count.gte": "1000" },
   },
 };
 
 export async function getMoodItems(mood: Mood): Promise<{ label: string; items: TMDBItem[] }> {
   const config = MOOD_CONFIGS[mood];
 
-  const movies = await tmdbFetchList("/discover/movie", config.movieParams, 1, "movie");
-  return { label: config.label, items: movies.slice(0, 20) };
+  const [movies, shows] = await Promise.all([
+    tmdbFetchList("/discover/movie", config.movieParams, 1, "movie"),
+    tmdbFetchList("/discover/tv", config.tvParams, 1, "tv"),
+  ]);
+
+  // Interleave movies and shows, deduplicate by id+type
+  const seen = new Set<string>();
+  const combined: TMDBItem[] = [];
+  const maxLen = Math.max(movies.length, shows.length);
+  for (let i = 0; i < maxLen && combined.length < 20; i++) {
+    if (i < movies.length) {
+      const key = `movie-${movies[i].id}`;
+      if (!seen.has(key)) { seen.add(key); combined.push(movies[i]); }
+    }
+    if (i < shows.length && combined.length < 20) {
+      const key = `tv-${shows[i].id}`;
+      if (!seen.has(key)) { seen.add(key); combined.push(shows[i]); }
+    }
+  }
+
+  return { label: config.label, items: combined };
 }
 
 export async function attachCardContext(items: TMDBItem[]): Promise<TMDBItem[]> {

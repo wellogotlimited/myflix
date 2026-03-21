@@ -31,6 +31,7 @@ import {
   type TvPlayerCaptionStatePayload,
   type TvReceiverStatusPayload,
   readRemoteSettings,
+  readStorageValue,
   writeStorageValue,
 } from "@/lib/tv-remote";
 import type { TMDBEpisode, TMDBSeason } from "@/lib/tmdb";
@@ -201,10 +202,8 @@ export default function WatchClient({
   }, [devMode]);
 
   useEffect(() => {
-    writeStorageValue(TV_RECEIVER_STORAGE_KEY, null);
-    writeStorageValue(TV_REMOTE_TARGET_STORAGE_KEY, null);
-    setTvReceiverId(null);
-    setRemoteReceiverId(null);
+    setTvReceiverId(readStorageValue(TV_RECEIVER_STORAGE_KEY));
+    setRemoteReceiverId(readStorageValue(TV_REMOTE_TARGET_STORAGE_KEY));
   }, []);
 
   const mediaKey = useMemo(

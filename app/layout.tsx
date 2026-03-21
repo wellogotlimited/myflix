@@ -1,11 +1,14 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import localFont from "next/font/local";
+import Script from "next/script";
 import Navbar from "@/components/Navbar";
 import Providers from "@/components/Providers";
 import MobileBottomNav from "@/components/mobile/MobileBottomNav";
 import PortraitLock from "@/components/PortraitLock";
 import OnboardingGuard from "@/components/OnboardingGuard";
 import PWAInstallBanner from "@/components/PWAInstallBanner";
+import TvReceiverBridge from "@/components/tv/TvReceiverBridge";
 import "./globals.css";
 
 const netflixSans = localFont({
@@ -30,7 +33,7 @@ const netflixSans = localFont({
 export const metadata: Metadata = {
   title: "Popflix",
   applicationName: "Popflix",
-  description: "Stream movies",
+  description: "Stream movies and TV shows",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
@@ -59,9 +62,17 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      {/* Google Cast SDK — loaded lazily so it doesn't block page render */}
+      <Script
+        src="https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1"
+        strategy="lazyOnload"
+      />
       <body className={`${netflixSans.variable} antialiased bg-[#141414] text-white`}>
         <Providers>
           <OnboardingGuard />
+          <Suspense fallback={null}>
+            <TvReceiverBridge />
+          </Suspense>
           <div className="hidden md:block">
             <Navbar />
           </div>

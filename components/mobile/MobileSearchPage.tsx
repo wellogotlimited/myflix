@@ -87,7 +87,7 @@ export default function MobileSearchPage({
             type="text"
             value={value}
             onChange={handleChange}
-            placeholder="Search movies..."
+            placeholder="Search shows, movies, animes..."
             autoFocus
             className="flex-1 bg-transparent text-sm text-white placeholder-white/40 outline-none"
           />

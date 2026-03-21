@@ -1,7 +1,9 @@
-import { notFound } from "next/navigation";
+import { requireAuth } from "@/lib/session";
+import TvStandbyScreen from "@/components/tv/TvStandbyScreen";
 
-export const metadata = { title: "Not Found - Popflix" };
+export const metadata = { title: "TV Remote - Popflix" };
 
-export default function TvPage() {
-  notFound();
+export default async function TvPage() {
+  await requireAuth();
+  return <TvStandbyScreen />;
 }

@@ -5,7 +5,7 @@ export async function GET(req: NextRequest) {
   const id = req.nextUrl.searchParams.get("id");
   const type = req.nextUrl.searchParams.get("type");
 
-  if (!id || type !== "movie") {
+  if (!id || (type !== "movie" && type !== "tv")) {
     return NextResponse.json({ error: "Missing or invalid id/type" }, { status: 400 });
   }
 
