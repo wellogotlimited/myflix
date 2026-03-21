@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 import { attachCardContext, searchMulti, getTrending } from "@/lib/tmdb";
 import { requireProfile } from "@/lib/session";
 import { passesMaturityFilter } from "@/lib/maturity";
-import MediaCard from "@/components/MediaCard";
+import SearchClient from "@/components/SearchClient";
 import MobileSearchPage from "@/components/mobile/MobileSearchPage";
 
 export default async function SearchPage({
@@ -38,15 +38,7 @@ export default async function SearchPage({
         <h1 className="mb-6 text-2xl font-semibold">
           {query ? `Results for "${query}"` : "Search"}
         </h1>
-        {results.length > 0 ? (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-            {results.map((item) => (
-              <MediaCard key={`${item.media_type}-${item.id}`} item={item} layout="grid" />
-            ))}
-          </div>
-        ) : (
-          query && <p className="text-gray-400">No results found.</p>
-        )}
+        <SearchClient query={query} results={results} />
       </main>
     </>
   );

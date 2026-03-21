@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useEffect, useState } from "react";
 import MediaCard from "./MediaCard";
 import { useMyList } from "@/lib/my-list";
+import { SavedMediaItem } from "@/lib/my-list";
 
 export default function MyListContent({
   variant = "page",
@@ -14,6 +15,17 @@ export default function MyListContent({
     () => [...items].sort((a, b) => b.savedAt - a.savedAt),
     [items]
   );
+  const [newEpisodeIds, setNewEpisodeIds] = useState<Set<number>>(new Set());
+
+  useEffect(() => {
+    fetch("/api/new-episodes")
+      .then((res) => res.json())
+      .then((data) => setNewEpisodeIds(new Set(data.tmdbIds ?? [])))
+      .catch(() => {});
+  }, []);
+
+  const hasNewEpisode = (item: SavedMediaItem) =>
+    item.media_type === "tv" && newEpisodeIds.has(item.id);
 
   const isSheet = variant === "sheet";
   const emptyState = isSheet
@@ -38,6 +50,7 @@ export default function MyListContent({
                 key={`${item.media_type}-${item.id}`}
                 item={item}
                 layout="grid"
+                newEpisodeBadge={hasNewEpisode(item)}
               />
             ))}
           </div>
@@ -49,6 +62,7 @@ export default function MyListContent({
                 item={item}
                 layout="grid"
                 portrait
+                newEpisodeBadge={hasNewEpisode(item)}
               />
             ))}
           </div>

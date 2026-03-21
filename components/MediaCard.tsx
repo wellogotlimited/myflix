@@ -34,10 +34,12 @@ export default function MediaCard({
   item,
   layout = "rail",
   portrait = false,
+  newEpisodeBadge = false,
 }: {
   item: TMDBItem;
   layout?: MediaCardLayout;
   portrait?: boolean;
+  newEpisodeBadge?: boolean;
 }) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
@@ -150,6 +152,11 @@ export default function MediaCard({
                 Recently Added
               </div>
             )}
+            {newEpisodeBadge && (
+              <div className="absolute right-1.5 top-1.5 rounded-full bg-[#e50914] px-2 py-0.5 text-[9px] font-bold text-white shadow-md">
+                New Ep
+              </div>
+            )}
           </div>
         </button>
         {modalOpen ? (
@@ -199,6 +206,11 @@ export default function MediaCard({
             {isNewRelease(item) && (
               <div className="absolute bottom-0 left-1/2 -translate-x-1/2 rounded-t-md bg-[#e50914] px-2 py-0.5 text-[9px] sm:px-2.5 sm:py-1 sm:text-[11px] font-bold text-white shadow-md whitespace-nowrap">
                 Recently Added
+              </div>
+            )}
+            {newEpisodeBadge && (
+              <div className="absolute right-2 top-2 rounded-full bg-[#e50914] px-2.5 py-0.5 text-[11px] font-bold text-white shadow-md">
+                New Ep
               </div>
             )}
           </div>
