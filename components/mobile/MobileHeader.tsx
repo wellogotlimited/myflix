@@ -5,7 +5,6 @@ import { usePathname } from "next/navigation";
 import { MagnifyingGlass } from "@phosphor-icons/react";
 import BrandWordmark from "@/components/BrandWordmark";
 import { useProfileSession } from "@/lib/profile-session";
-import TvConnectButton from "@/components/tv/TvConnectButton";
 
 export default function MobileHeader() {
   const { profileName } = useProfileSession();
@@ -15,7 +14,6 @@ export default function MobileHeader() {
     pathname === "/login" ||
     pathname === "/register" ||
     pathname === "/profiles" ||
-    pathname === "/tv" ||
     pathname.startsWith("/watch/");
 
   if (isHidden) return null;
@@ -28,7 +26,6 @@ export default function MobileHeader() {
         <BrandWordmark size={28} textClassName="text-2xl font-bold text-white" />
       )}
       <div className="flex items-center gap-4">
-        <TvConnectButton />
         <Link href="/search" className="text-white">
           <MagnifyingGlass size={28} weight="bold" />
         </Link>
