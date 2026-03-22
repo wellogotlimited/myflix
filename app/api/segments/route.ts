@@ -14,6 +14,7 @@ export async function GET(request: Request) {
   const season = searchParams.get("season");
   const episode = searchParams.get("episode");
   const imdbId = searchParams.get("imdbId");
+  const tidbApiKey = process.env.TIDB_API_KEY?.trim();
 
   console.log("[segments] inbound request", {
     method: request.method,
@@ -24,6 +25,7 @@ export async function GET(request: Request) {
       season,
       episode,
       imdbId,
+      hasTidbApiKey: Boolean(tidbApiKey),
     },
     requestHeaders: pickHeaders(request.headers, [
       "host",
@@ -42,9 +44,10 @@ export async function GET(request: Request) {
   // Primary: TheIntroDB
   try {
     const url = `${TIDB_BASE}/media?tmdb_id=${tmdbId}&season=${season}&episode=${episode}`;
-    const headers = {
+    const headers: HeadersInit = {
       accept: "application/json, text/plain;q=0.9, */*;q=0.1",
       "user-agent": "myflix/segments-fetch",
+      ...(tidbApiKey ? { authorization: `Bearer ${tidbApiKey}` } : {}),
     };
 
     console.log("[segments] outbound request", {
@@ -53,7 +56,7 @@ export async function GET(request: Request) {
       method: "GET",
       cache: "no-store",
       timeoutMs: EXTERNAL_FETCH_TIMEOUT_MS,
-      headers,
+      headers: redactAuthHeader(headers),
     });
 
     const res = await fetch(url, {
@@ -228,6 +231,15 @@ function pickHeaders(headers: Headers, names: string[]) {
     if (value) selected[name] = value;
   }
   return selected;
+}
+
+function redactAuthHeader(headers: HeadersInit) {
+  const entries = new Headers(headers);
+  const redacted: Record<string, string> = {};
+  for (const [key, value] of entries.entries()) {
+    redacted[key] = key === "authorization" ? "Bearer [redacted]" : value;
+  }
+  return redacted;
 }
 
 async function readJsonResponse(res: Response) {

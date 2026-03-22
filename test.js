@@ -1,3 +1,5 @@
+const tidbApiKey = process.env.TIDB_API_KEY?.trim();
+
 const probes = [
   {
     name: "Deployed /api/segments",
@@ -37,6 +39,7 @@ const probes = [
       headers: {
         accept: "application/json, text/plain;q=0.9, */*;q=0.1",
         "user-agent": "myflix/segments-fetch",
+        ...(tidbApiKey ? { authorization: `Bearer ${tidbApiKey}` } : {}),
       },
       method: "GET",
     },
@@ -68,6 +71,7 @@ const probes = [
 for (const probe of probes) {
   console.log(`\n=== ${probe.name} ===`);
   console.log(probe.url);
+  console.log("using api key:", Boolean(tidbApiKey));
 
   const response = await fetch(probe.url, probe.options);
   const text = await response.text();
